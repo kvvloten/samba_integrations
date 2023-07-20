@@ -1,0 +1,23 @@
+#!/bin/bash
+
+if [[ $# -lt 1 ]]; then
+    echo "Usage: $0 <ldap_object> [with-gid]"
+    echo "    ldap_object   a computer, user or group"
+    exit 1
+fi
+OBJECT=$1
+FILTER=""
+if [[ "$2" == "with-gid" ]]; then
+    FILTER="(gidNumber=*)"
+fi
+
+BASE_DN="DC=$(dnsdomainname | sed 's/\./,DC=/g')"
+# Use UID instead of sAMAccountName because it does not have the $ ending for computer accounts
+OBJECT_DN="$(ldbsearch -H /var/lib/samba/private/sam.ldb -b "${BASE_DN}" "(|(CN=${OBJECT})(UID=${OBJECT}))" 2> /dev/null | 
+    grep 'dn:' | cut -d ' ' -f 2-)"
+
+#echo "Object DN: ${OBJECT_DN}"
+#echo "Nested group memberships:"
+ldbsearch -H /var/lib/samba/private/sam.ldb -b "${BASE_DN}" \
+    "(&(objectClass=group)(member:1.2.840.113556.1.4.1941:=${OBJECT_DN})${FILTER})" cn 2> /dev/null |
+    grep 'cn:' | cut -d ' ' -f 2- | sort

@@ -1,0 +1,4 @@
+#!/bin/bash
+
+BASE_DN="DC=$(dnsdomainname | sed 's/\./,DC=/g')"
+ldbsearch -H /var/lib/samba/private/sam.ldb -b "CN=Policies,CN=System,${BASE_DN}" 'displayName'

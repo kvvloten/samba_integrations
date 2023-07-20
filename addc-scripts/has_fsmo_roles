@@ -1,0 +1,5 @@
+#!/bin/bash
+
+HOSTNAME="$(hostname)"
+FSMO_ROLES=$(samba-tool fsmo show -H /var/lib/samba/private/sam.ldb | grep -ic "CN=${HOSTNAME},")
+[[ ${FSMO_ROLES} -eq 7 ]] && exit 0 || exit 1

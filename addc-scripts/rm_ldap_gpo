@@ -1,0 +1,12 @@
+#!/bin/bash
+
+[[ $# -ne 1 ]] && echo "Usage: $0 <uuid>" && exit 1
+UUID="$1"
+
+BASE_DN="$(samba-tool gpo listall -H /var/lib/samba/private/sam.ldb | \
+           awk -v uuid="${UUID}" '/^dn/{regex = "^CN=" uuid ",";  if($3 ~ regex){print $3}}')"
+
+echo "Removing LDAP objects at: ${BASE_DN}"
+ldbdel -H /var/lib/samba/private/sam.ldb "CN=Machine,${BASE_DN}"
+ldbdel -H /var/lib/samba/private/sam.ldb "CN=User,${BASE_DN}"
+ldbdel -H /var/lib/samba/private/sam.ldb "${BASE_DN}"

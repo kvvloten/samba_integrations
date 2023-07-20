@@ -1,0 +1,26 @@
+#!/bin/bash
+# When running from cron PATH is not set
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+#
+# Schedule this in cron-daily
+# Auto-lock user in the AUTOLOCK_GROUP every time this script runs
+# This way you can have users (e.g. administrators) that are normally locked, when you need one, unlock it for a day
+
+# Do this on the DC with FSMO roles only
+has_fsmo_roles || exit 0
+
+AUTOLOCK_GROUP="YOUR AUTOLOCK GROUP NAME"
+BASE_DN="DC=$(dnsdomainname | sed 's/\./,DC=/g')"
+OBJECT_DN="$(ldbsearch -H /var/lib/samba/private/sam.ldb -b "${BASE_DN}" "(&(objectClass=group)(sAMAccountName=${AUTOLOCK_GROUP}))" |
+         grep 'dn:' | cut -d ' ' -f 2-)"
+
+CNS="$(ldbsearch -H /var/lib/samba/private/sam.ldb -b "${BASE_DN}" \
+       "(&(objectClass=user)(memberof:1.2.840.113556.1.4.1941:=${OBJECT_DN}))" | grep 'cn:' | cut -d ' ' -f 2- | sort)"
+
+echo "Auto-lock and password change for:"
+for CN in ${CNS}; do
+    USER="$(ldbsearch -H /var/lib/samba/private/sam.ldb -b "${BASE_DN}" "(&(objectClass=user)(CN=${CN}))" | grep 'sAMAccountName:' | cut -d ' ' -f 2-)"
+    echo "  ${USER}"
+    samba-tool user setpassword "${USER}" --random-password >/dev/null 2>&1
+    samba-tool user disable "${USER}"
+done

@@ -1,0 +1,39 @@
+#!/bin/bash
+# http://www.selfadsi.org/ads-attributes/user-userAccountControl.htm#UF_SERVER_TRUST_ACCOUNT
+
+if [[ $# -ne 2 ]] || ! echo "computer user" | grep -wq "$1"; then
+    echo "Usage: $0 <user|computer> <account-name>"
+    exit 1
+fi
+
+ACCOUNT_TYPE=$1
+ACCOUNT_NAME=$2
+UAC=$(samba-tool "${ACCOUNT_TYPE}" show "${ACCOUNT_NAME}"  2> /dev/null | grep 'userAccountControl' | awk -F ': ' '{print $2}')
+
+echo "User account control value: ${UAC}"
+
+[[ $((UAC & 2)) -ne 0 ]] && echo "UF_ACCOUNT_DISABLE"
+
+[[ $((UAC & 8)) -ne 0 ]] && echo "UF_HOMEDIR_REQUIRED"
+[[ $((UAC & 16)) -ne 0 ]] && echo "UF_LOCKOUT"
+[[ $((UAC & 32)) -ne 0 ]] && echo "UF_PASSWD_NOTREQD"
+[[ $((UAC & 64)) -ne 0 ]] && echo "UF_PASSWD_CANT_CHANGE"
+[[ $((UAC & 128)) -ne 0 ]] && echo "UF_ENCRYPTED_TEXT_PASSWORD_ALLOWED"
+
+[[ $((UAC & 512)) -ne 0 ]] && echo "UF_NORMAL_ACCOUNT"
+
+[[ $((UAC & 2048)) -ne 0 ]] && echo "UF_INTERDOMAIN_TRUST_ACCOUNT"
+[[ $((UAC & 4096)) -ne 0 ]] && echo "UF_WORKSTATION_TRUST_ACCOUNT"
+[[ $((UAC & 8192)) -ne 0 ]] && echo "UF_SERVER_TRUST_ACCOUNT"
+
+[[ $((UAC & 65536)) -ne 0 ]] && echo "UF_DONT_EXPIRE_PASSWD"
+[[ $((UAC & 131072)) -ne 0 ]] && echo "UF_MNS_LOGON_ACCOUNT"
+[[ $((UAC & 262144)) -ne 0 ]] && echo "UF_SMARTCARD_REQUIRED"
+[[ $((UAC & 524288)) -ne 0 ]] && echo "UF_TRUSTED_FOR_DELEGATION"
+[[ $((UAC & 1048576)) -ne 0 ]] && echo "UF_NOT_DELEGATED"
+[[ $((UAC & 2097152)) -ne 0 ]] && echo "UF_USE_DES_KEY_ONLY"
+[[ $((UAC & 4194304)) -ne 0 ]] && echo "UF_DONT_REQUIRE_PREAUTH"
+[[ $((UAC & 8388608)) -ne 0 ]] && echo "UF_PASSWORD_EXPIRED"
+[[ $((UAC & 16777216)) -ne 0 ]] && echo "UF_TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION"
+[[ $((UAC & 33554432)) -ne 0 ]] && echo "UF_NO_AUTH_DATA_REQUIRED"
+[[ $((UAC & 67108864)) -ne 0 ]] && echo "UF_PARTIAL_SECRETS_ACCOUNT"
