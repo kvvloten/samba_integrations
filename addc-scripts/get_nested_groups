@@ -2,7 +2,7 @@
 
 if [[ $# -lt 1 ]]; then
     echo "Usage: $0 <ldap_object> [with-gid]"
-    echo "    ldap_object   a computer, user or group"
+    echo "    ldap_object   name of a computer, user or group"
     exit 1
 fi
 OBJECT=$1
