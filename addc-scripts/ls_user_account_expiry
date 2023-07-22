@@ -1,0 +1,21 @@
+#!/bin/bash
+
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <account_regex>"
+    echo "   Show expiry time for all matching accounts"
+    exit 1
+fi
+ACCOUNT_REGEX="$1"
+
+BASE_DN="DC=$(dnsdomainname | sed 's/\./,DC=/g')"
+USERS="$(samba-tool user list 2> /dev/null | grep -E "${ACCOUNT_REGEX}")"
+RESULTS=""
+for USER in ${USERS}; do
+    EXPIRY_TIME="$(ldbsearch --show-binary -H /var/lib/samba/private/sam.ldb -b "${BASE_DN}" "(&(objectClass=user)(sAMAccountName=${USER}))" msDS-UserPasswordExpiryTimeComputed 2> /dev/null |
+                   awk '/^msDS-UserPasswordExpiryTimeComputed: /{ if($2 > 0){ts=($2/10000000)-11644473600; print strftime("%Y-%m-%d %H:%M:%S",ts)}}')"
+
+    # Skip never expiring accounts:
+    [[ "$(echo "${EXPIRY_TIME}" | awk '{print $1}')" != "30828-09-14" ]] || continue
+    RESULTS="${RESULTS}\n${EXPIRY_TIME}   ${USER}"
+done
+echo -e "${RESULTS}" | sort -r

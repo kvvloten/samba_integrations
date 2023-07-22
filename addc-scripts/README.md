@@ -111,6 +111,15 @@ Usage: `get_nested_groups <group-name>`
 get_nexted_users mygroup
 ```
 
+#### ls_user_account_expiry
+
+Lists expiry time for user accounts matching the regular expression.
+
+Output is reverse order (first expiring account at the end)
+
+Usage: `ls_user_account_expiry <account-regex>`
+
+
 ### GPO management
 
 #### cat_ldap_gpo
