@@ -1,0 +1,23 @@
+#!/bin/bash
+
+if [[ $# -ne 1 ]] || ! echo "computer user" | grep -wq "$1"; then
+    echo "Usage: $0 <ldap_object>"
+    echo "    ldap_object   computer, user"
+    exit 1
+fi
+OBJECT=$1
+
+# Decoding MsDS-SupportedEncryptionTypes Bitmask:
+#  0x00000001 - 1  - DES-CBC-CRC
+#  0x00000002 - 2  - DES-CBC-MD5
+#  0x00000004 - 4  - RC4-HMAC
+#  0x00000008 - 8  - AES128-CTS-HMAC-SHA1-96 Hash Function with mac truncated to 96 bits
+#  0x00000010 - 16 - AES256-CTS-HMAC-SHA1-96 Hash Function with mac truncated to 96 bits   
+#  0x00000020 - 32 - AES256-CTS-HMAC-SHA1-96-SK",
+#  0x00080000 -    - RESOURCE-SID-COMPRESSION-DISABLED"
+EXPECTED_ENCTYPES="48"
+
+for item in $(samba-tool ${OBJECT} list 2> /dev/null | sort ); do 
+    ec=$(samba-tool ${OBJECT} show $item 2> /dev/null | awk '/msDS-SupportedEncryptionTypes/{print $2}'); 
+    [[ -z $ec ]] || [[ $ec -eq  ${EXPECTED_ENCTYPES} ]] || echo "$item $ec"
+done

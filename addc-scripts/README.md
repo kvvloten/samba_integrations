@@ -87,6 +87,14 @@ Decodes the account-control field of a user or computer.
 
 Usage: `cat_user_account_control <user|computer> <account-name>`
 
+#### get_misconfigured_enctypes
+
+Get all accounts with misconfigured kerberos encryption types
+
+Do update the variable `EXPECTED_ENCTYPES` for your environment
+
+Usage: `get_misconfigured_enctypes <user|computer>`
+
 #### get_nested_groups
 
 Lists all (nested) groups of a user, computer or group
