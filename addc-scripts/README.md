@@ -1,8 +1,10 @@
 # Cron and management scripts for Samba-AD controllers
 
+**This setup should be executed on ALL Samba-DCs**
+
 ## Setup
 
-- Copy all scripts to `/usr/local/sbin`
+- Copy all scripts to `/usr/local/sbin` 
 - Download two required scripts directly from the Samba repository and put them in `/usr/local/sbin`
     - https://gitlab.com/samba-team/samba/-/raw/master/source4/scripting/devel/chgtdcpass
     - https://gitlab.com/samba-team/samba/-/raw/master/source4/scripting/devel/chgkrbtgtpass

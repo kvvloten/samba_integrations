@@ -1,0 +1,54 @@
+#!/bin/bash
+
+DNS_DOMAIN="$(dnsdomainname)"
+SYSVOL_PATH="/var/lib/samba/sysvol/${DNS_DOMAIN}"
+
+function cleanup() {
+    rm "${ACL_DIRS_FILE}" 2> /dev/null
+    rm "${ACL_FILES_FILE}" 2> /dev/null
+}
+
+function flags_to_mode() {
+    if grep -q '^# flags:' "${ACL_DIRS_FILE}"; then
+        awk 'BEGIN{ORS=","} /# flags: .s./{print "g+s"}/# flags: .-./{print "g-s"} /# flags: ..t/{print "o+t"}/# flags: ..-/{print "o-t"}' "${ACL_DIRS_FILE}" | sed -e 's/,$//'
+    else
+        echo "g-s,o-t"
+    fi
+}    
+
+function set_sysvol_subtree_permissions() {
+    local DIR=$1
+    ACL_DIRS_FILE="$(mktemp)"
+    ACL_FILES_FILE="$(mktemp)"
+    
+    getfacl "${DIR}" > "${ACL_DIRS_FILE}"
+    grep '^default' "${ACL_DIRS_FILE}" | cut -d : -f 2- > "${ACL_FILES_FILE}"
+    MODE_FLAGS="$(flags_to_mode)"
+    SHARE_GROUP="$(stat -c '%G' "${DIR}")"
+
+    find "${DIR}/" \
+        -mindepth 1 \
+        -type d \
+        -print \
+        -exec chmod "${MODE_FLAGS}" "{}" \; \
+        -exec chgrp "${SHARE_GROUP}" "{}" \; \
+        -exec setfacl -b "{}" \; \
+        -exec setfacl --set-file="${ACL_DIRS_FILE}" "{}" \; -print
+
+    find "${DIR}/" \
+        -mindepth 1 \
+        -type f \
+        -print \
+        -exec chgrp "${SHARE_GROUP}" "{}" \; \
+        -exec setfacl -b "{}" \; \
+        -exec setfacl --set-file="${ACL_FILES_FILE}" "{}" \;   
+}
+
+function main() {
+    trap cleanup EXIT SIGTERM SIGINT
+    set_sysvol_subtree_permissions "${SYSVOL_PATH}/scripts"
+    set_sysvol_subtree_permissions "${SYSVOL_PATH}/Policies/PolicyDefinitions"
+}
+
+# shellcheck disable=SC2068
+main $@

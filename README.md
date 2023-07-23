@@ -23,6 +23,16 @@ Management scripts:
 - Get all (nested) groups of a user, computer or group
 - Get all (nested) users of a group
 - Get user (or computer) account-control information
+- Get user (or computer) account expiry information
+- Get user (or computer) misconfigured (potentially weak) configured kerberos encryption types
 - Get GPO information (multiple scripts)
 
 More details are the README [here](addc_scripts/README.md) 
+
+## More Windows-like sysvol permissions
+
+Reasons:
+- With these settings Windows will not change permissions when it manages files on sysvol.
+- GPOs can be managed from Windows by members of `Group Policy Creator Owners` instead of `Domain Admins`, which means login for `Domain Admins` can be disabled on Windows clients.  
+
+Setup details are the README [here](sysvol_permissions/README.md) 
