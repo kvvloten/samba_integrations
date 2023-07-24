@@ -8,6 +8,8 @@ Access should be restricted to those older devices with iptables or nftables.
 
 **Do not use a Samba-AD-DC server to setup the LDAP-proxy!** 
 
+Setup instructions are written for a Debian server.
+
 LDAP-proxy uses the same listen-por (389) as Samba and you would have to set it up on each DC and add that redundancy in 
 the config of your old devices (which may not have support for multiple servers). In other words, it is much simpeler to 
 install it on another machine. 

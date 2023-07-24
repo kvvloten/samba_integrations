@@ -1,6 +1,6 @@
 # Tools and integrations for Samba-AD
 
-Setup instructions are written for a Debian server.
+**DISCLAIMER: Use of anything provided here is at you own risk!**
 
 
 ## Anonymous LDAP-proxy

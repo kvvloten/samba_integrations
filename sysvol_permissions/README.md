@@ -1,14 +1,19 @@
 # More Windows-like sysvol permissions
 
+**DISCLAIMER: Use of anything provided here is at you own risk!**
+
 Reasons:
 - With these settings Windows will not change permissions when it manages files on sysvol.
 - GPOs can be managed from Windows by members of `Group Policy Creator Owners` instead of `Domain Admins`, which means login for `Domain Admins` can be disabled on Windows clients.  
 
 NOTE: Never run `samba-tool ntacl sysvolreset` because it will reset all filesystem ACLs to Samba's default and hence undo the changes described here.
 
+
 # Setup
 
 **This setup should be executed on ONE of the Samba-DCs**, replication will take care of the others.
+
+Setup instructions are written for a Debian server.
 
 Ensure your sysvol replication does not execute `samba-tool ntacl sysvolreset`!
 
@@ -136,4 +141,5 @@ must be updated by a domain admin to allow `Group Policy Creator Owners` members
 
 The permissions on current GPOs are left as they are. When GPOs are filtered to AD-groups the permissions cannot
 be predicted and therefore it is better not to touch them. Either create custom scripts or use `gpmc.msc` in Windows 
-to set the GPO permissions.
+to set the GPO permissions. `set_sysvol_acls` does change the ACLs on subdirectories in GPOs, it will read the permisions 
+on toplevel of a GPO and propagate them down on the content.

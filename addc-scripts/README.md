@@ -1,8 +1,12 @@
 # Cron and management scripts for Samba-AD controllers
 
+**DISCLAIMER: Use of anything provided here is at you own risk!**
+
 **This setup should be executed on ALL Samba-DCs**
 
 ## Setup
+
+Setup instructions are written for a Debian server.
 
 - Copy all scripts to `/usr/local/sbin` 
 - Download two required scripts directly from the Samba repository and put them in `/usr/local/sbin`
