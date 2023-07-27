@@ -11,8 +11,6 @@ NOTE: Never run `samba-tool ntacl sysvolreset` because it will reset all filesys
 
 # Setup
 
-**This setup should be executed on ONE of the Samba-DCs**, replication will take care of the others.
-
 Setup instructions are written for a Debian server.
 
 Ensure your sysvol replication does not execute `samba-tool ntacl sysvolreset`!
@@ -22,6 +20,9 @@ Steps:
 - Update filesystem ACLs on sysvol to allow members of `Group Policy Creator Owners` to update netlogon scripts, admx files and create GPOs.
 
 ## Change DS-ACL of GPO container object
+
+**This setup should be executed on ONE of the Samba-DCs**, replication will take care of the others.
+
 
 Apply DC-ACLs to `CN=Policies,CN=System,${BASE_DN}`:
 
@@ -72,6 +73,11 @@ rm /tmp/gpo_dsacl.ldif /tmp/gpo_dsacl.acls
 ```
 
 ## Change filesystem ACLs
+
+**This setup should be executed on ALL Samba-DCs**
+
+Filesystem replication with rsync, osync or other will only synchronize changed files, ACL-changes are generally not detected as file changes.
+
 
 The setup uses Posix-ACLs which have fewer options then NT-ACLs, there are pros and cons to this approach:
 - Pro: readability: the ACL specification is much easier to understand in Linux then the specification of NT-ACLs
