@@ -1,4 +1,4 @@
-# Setup Privacyidea with Samba authentication
+# Setup Privacyidea with Samba backend
 
 [Privacyidea](https://github.com/privacyidea/privacyidea) is a versatile multi-factor authentication system. When configured with Samba as backend users get MFA with their Samba user-id.  
 
