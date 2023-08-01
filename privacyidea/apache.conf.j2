@@ -1,0 +1,12 @@
+
+WSGIDaemonProcess wsgi_privacyidea user=privacyidea group=www-data threads=3 python-home=/opt/privacyidea/venv
+WSGIScriptAlias /pi /opt/privacyidea/wsgi/privacyidea.wsgi/privacyidea.wsgi
+<Directory /opt/privacyidea/wsgi>
+    Require all granted
+
+    WSGIProcessGroup wsgi_privacyidea
+    WSGIApplicationGroup %{GLOBAL}
+
+    # https://stackoverflow.com/questions/13387516/authorization-header-missing-in-django-rest-framework-is-apache-to-blame
+    WSGIPassAuthorization On
+</Directory>

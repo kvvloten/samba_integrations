@@ -36,6 +36,7 @@ samba-tool user show <SERVICE-ACCOUNT NAME>
 - Copy `slapd.conf` to `/etc/ldap/slapd.conf`
 - Edit the `/etc/ldap/slapd.conf`:
   - Set the base-DN in `suffix`
+  - Set the DC hostnames in `uri`
   - Set the DN of the SERVICE-ACCOUNT in `binddn`
   - Set the password of the SERVICE-ACCOUNT in `credentials`
 

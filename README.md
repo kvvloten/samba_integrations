@@ -10,6 +10,13 @@ Anonymous LDAP-proxy in front of Samba-AD is useful for older devices (e.g. prin
 Setup details are in README [here](anonymous_ldap_proxy/README.md) 
 
 
+## Privacyides with Samba backend
+
+Privacyidea is versatile multi-factor authentication system. When configured with Samba as backend users get MFA with their Samba user-id.
+
+Setup details are in README [here](privacyidea/README.md) 
+
+
 ## Cron- and management scripts for Samba-AD controllers
 
 Cron scripts:
