@@ -25,7 +25,7 @@ Assumptions:
 ```bash
 # Set the version you want to use here:
 PRIVACYIDEA_VERSION=3.8.1
-# Version can be found at: https://github.com/privacyidea/privacyidea/tags
+# Versions can be found at: https://github.com/privacyidea/privacyidea/tags
 
 apt-get install postgresql-client python3-pip python3-venv makepasswd apache2 libapache2-mod-wsgi-py3 jq
 
