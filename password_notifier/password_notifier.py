@@ -1,4 +1,4 @@
-#!{{ c_password_notifier.venv_path }}/bin/python3
+#!/opt/password_notifier/bin/python3
 import json
 import os
 import ldap_support as lds

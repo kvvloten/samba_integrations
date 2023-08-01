@@ -76,8 +76,26 @@ pip install pip setuptools wheel --upgrade
 
 ```bash
 source /opt/privacyidea_pam/bin/activate
-curl -s https://raw.githubusercontent.com/privacyidea/pam_python/master/privacyidea_pam.py > /opt/privacyidea_pam/lib/python2.7/site-packages/privacyidea_pam.py
 pip install -r https://raw.githubusercontent.com/privacyidea/pam_python/master/requirements.txt
+curl -s https://raw.githubusercontent.com/privacyidea/pam_python/master/privacyidea_pam.py > /opt/privacyidea_pam/lib/python2.7/site-packages/privacyidea_pam.py
+cd /opt/privacyidea_pam/lib/python2.7/site-packages
+cat << EOF | patch -p1
+--- a/privacyidea_pam.py    2022-03-24 11:55:05.601712742 +0100
++++ b/privacyidea_pam.py    2022-03-24 17:11:27.569721976 +0100
+@@ -39,6 +39,11 @@
+ The code is tested in test_pam_module.py
+ """
+ 
++import os
++import site
++FILE_PATH = os.path.dirname(os.path.abspath(__file__))
++site.addsitedir(FILE_PATH)
++
+ import json
+ import requests
+ import syslog
+EOF
+cd -
 mkdir /etc/privacyidea
 ```
 
