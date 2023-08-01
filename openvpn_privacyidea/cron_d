@@ -1,0 +1,4 @@
+PATH=/bin:/usr/bin:/sbin:/usr/sbin
+
+# expire vpn sessions older than one day
+*/5 * * * * /etc/openvpn/expire-sessions.sh > /dev/null 2>&1

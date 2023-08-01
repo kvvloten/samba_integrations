@@ -27,7 +27,7 @@ Assumptions:
 PRIVACYIDEA_VERSION=3.8.1
 # Versions can be found at: https://github.com/privacyidea/privacyidea/tags
 
-apt-get install postgresql-client python3-pip python3-venv makepasswd apache2 libapache2-mod-wsgi-py3 jq
+apt-get install postgresql-client python3-pip python3-venv makepasswd apache2 libapache2-mod-wsgi-py3 jq curl
 
 mkdir /etc/privacyidea /var/log/privacyidea /opt/privacyidea
 adduser -d /opt/privacyidea/wsgi -m -r -s /usr/sbin/nologin -U -G www-data privacyidea

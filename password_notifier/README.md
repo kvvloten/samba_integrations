@@ -18,11 +18,14 @@ Assumptions:
 
 ```bash
 apt-get install python3-pip python3-venv
+# Required for python-ldap:
+apt-get install gcc libldap2-dev libsasl2-dev python3.9-dev
 
 mkdir /opt/password_notifier
 python3 -m venv /opt/password_notifier
 source /opt/privacyidea/venv/bin/activate
 pip install pip setuptool wheel --upgrade 
+pip install python-ldap
 ```
 
 - Copy files to `/opt/password_notifier`:
@@ -44,7 +47,7 @@ samba-tool user show <SERVICE-ACCOUNT NAME>
 ```
 
 - Copy `config.json` to `/opt/password_notifier`
-- Edit `config.json`:
+- Edit `/opt/password_notifier/config.json`:
   - Set DC hostnames in `uri`
   - Set DN of the SERVICE-ACCOUNT in `user`
   - Set password of the SERVICE-ACCOUNT in `password`

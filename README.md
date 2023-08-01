@@ -17,6 +17,15 @@ Privacyidea is versatile multi-factor authentication system. When configured wit
 Setup details are in README [here](privacyidea/README.md) 
 
 
+## Openvpn with Privacyidea MFA and Samba authorization
+
+OpenVPN setup with Privacyidea MFA authentication and Samba LDAP authorization based on nested group membership.
+
+This requires the above Privacyidea setup.
+
+Setup details are in README [here](openvpn_privacyidea/README.md) 
+
+
 ## Password notifier
 
 Send notification and warning mails to your users about password expiry

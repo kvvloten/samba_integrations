@@ -1,0 +1,15 @@
+# These settings are pushed to the clients
+#
+# Client ping and restart are triggered in server.conf with "keepalive" option
+#   details are in: https://community.openvpn.net/openvpn/wiki/Openvpn24ManPage
+
+push "persist-key"
+push "persist-tun"
+# disabled comp-lzo:
+#  - it increases throughput: https://serverfault.com/questions/544869/improving-openvpn-performance
+#  - mitigates voracle attack: https://community.openvpn.net/openvpn/wiki/VORACLE
+
+push "route <LOCAL NETWORK-ADDRESS> <SUBNET MASK>"
+
+push "dhcp-option DNS <IP OF 1ST DC-SERVER>"
+push "dhcp-option DNS <IP OF 2ND DC-SERVER>"
