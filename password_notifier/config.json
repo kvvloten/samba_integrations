@@ -1,0 +1,14 @@
+{
+    "ldap": {
+        "uri": "ldap://<YOUR 1ST DC-SERVER>/ ldap://<YOUR 2ND DC-SERVER>/",
+        "user": "<SERVICE-ACCOUNT DN>",
+        "password": "<SERVICE-ACCOUNT PASSWORD>",
+        "user_dn": "<BASE-DN OF YOUR USER-ACCOUNTS>"
+    },
+    "mail_from": "<YOUR ADMIN MAIL-ADDRESS>",
+    "password_max_age": 90,
+    "notice_subject": "Your password expires in {} day(s)", 
+    "warning_subject": "CHANGE YOU PASSWORD NOW, expires in {} day(s)",
+    "notice_days": [30, 14, 7],
+    "warning_days": [4, 2, 1]
+}

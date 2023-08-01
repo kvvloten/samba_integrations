@@ -1,0 +1,8 @@
+Dear colleague,
+
+Your password is about to expire soon (in {days_remaining} day(s)).
+Change it NOW to prevent your account from getting locked. 
+
+
+Kind regards,
+System Administration

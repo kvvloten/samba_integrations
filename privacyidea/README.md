@@ -1,4 +1,4 @@
-# Setup Privacyidea with Samba backend
+# Privacyidea with Samba backend
 
 [Privacyidea](https://github.com/privacyidea/privacyidea) is a versatile multi-factor authentication system. When configured with Samba as backend users get MFA with their Samba user-id.  
 
@@ -33,7 +33,7 @@ mkdir /etc/privacyidea /var/log/privacyidea /opt/privacyidea
 adduser -d /opt/privacyidea/wsgi -m -r -s /usr/sbin/nologin -U -G www-data privacyidea
 mkdir -m 0750 /opt/privacyidea/venv
 python3 -m venv /opt/privacyidea/venv
-source /opt/privacyidea/venv
+source /opt/privacyidea/venv/bin/activate
 pip install pip setuptool wheel --upgrade 
 pip install psycopg2-binary
 pip install -r https://raw.githubusercontent.com/privacyidea/privacyidea/v${PRIVACYIDEA_VERSION}/requirements.txt
@@ -80,6 +80,7 @@ makepasswd --chars=24
   - Set the `SECRET_KEY` and `PI_PEPPER`to the 24 char passwords
   - Set the DATABASE PASSWORD and database server fqdn in `SQLALCHEMY_DATABASE_URI`
 
+
 - Initial setup commands:
 
 ```bash
@@ -105,11 +106,14 @@ usermod -s "/usr/sbin/nologin" privacyidea
 - If your python version is NOT python3.9 (default for Debian Bullseye) then edit the `/opt/privacyidea/wsgi/privacyidea.wsgi`:
   - Change `/opt/privacyidea/venv/lib/python3.9/site-packages` to match your environment
 
+
 - Copy `apache.conf` to `/etc/apache2/conf-available/privacyidea.conf`
 - The uri is set to `/pi` in `/etc/apache2/conf-available/privacyidea.conf`, change it if you want something else
 - Edit `/etc/apache2/sites-enabled/default-ssl.conf` (or whatever is your TLS enabled vhost conf):
   - Insert a line `Include /etc/apache2/conf-available/privacyidea.conf` in the vhost
   - Reload apache `apachectl graceful`
+
+### Test
 
 - Open a broswser an navigate to Privacyidea `https://<YOUR SERVER FQDN>/pi`, you should get the login dialog
 - Check if you can login with user `admin` and password `<ADMIN_PASSWORD>`
@@ -134,7 +138,7 @@ samba-tool user show <SERVICE-ACCOUNT NAME>
   - Set the DC hostnames in `LDAPURI`
   - Set the DN of the SERVICE-ACCOUNT in `BINDDN`
   - Set the password of the SERVICE-ACCOUNT in `BINDPW`
-  - Optionally change the `TLS_VERSION` (default is 2), 2=TLSv1.3, 5=TLSv1.2, 4=TLSv1.1, 3=TLSv1.0
+  - Optionally change the `TLS_VERSION` (default is 2), 2=TLSv1.3,  5=TLSv1.2,  4=TLSv1.1,  3=TLSv1.0
 
 ```bash
 # If not set already:
@@ -176,5 +180,6 @@ The connection between Privacyidea and Samba is made. Users can login on Privacy
 - You probably want to setup a user selfservice policy, so that users can create MFA tokens of your choice.
 - Setup policies for services to authenticate against Privacyidea
 - Setup Privacyidea authentication in services that require MFA login
+
 
 The Privacyidea manual is [here](https://privacyidea.readthedocs.io/en/latest/index.html)

@@ -1,0 +1,3 @@
+#!/bin/bash
+
+/opt/password_notifier/password_notifier.py > /dev/null 2>&1

@@ -17,6 +17,13 @@ Privacyidea is versatile multi-factor authentication system. When configured wit
 Setup details are in README [here](privacyidea/README.md) 
 
 
+## Password notifier
+
+Send notification and warning mails to your users about password expiry
+
+Setup details are in README [here](password_notifier/README.md) 
+
+
 ## Cron- and management scripts for Samba-AD controllers
 
 Cron scripts:
