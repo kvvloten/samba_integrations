@@ -1,0 +1,12 @@
+
+
+# Beware if multiple entries of AllowGroups match they will be concatenated! 
+
+# Enable if you want AllowGroups for users from the local network
+#Match Address <LOCAL_NETWORK_CIDR>
+#    AllowGroups ssh-users
+
+# A negative test never matches, add a term that yields a positive match
+Match Address !<LOCAL_NETWORK_CIDR>,*
+    PermitRootLogin no
+    Banner /etc/ssh/sshd_banner.txt

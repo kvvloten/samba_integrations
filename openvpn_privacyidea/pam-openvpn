@@ -1,9 +1,9 @@
 #%PAM-1.0
 
-auth    [success=1 default=ignore]      pam_python.so /opt/privacyidea_pam/lib/python2.7/site-packages/privacyidea_pam.py url=<PRIVACYIDEA_BASE_URL> cacerts=/etc/ssl/certs/ca-certificates.crt debug
-auth    requisite           pam_deny.so
-auth    required            pam_permit.so
-session sufficient          pam_permit.so
-account [success=1 default=ignore]      pam_ldap.so
-account requisite           pam_deny.so
-account sufficient          pam_permit.so
+auth    [success=1 default=ignore]      pam_python.so /opt/privacyidea_pam/lib/python2.7/site-packages/privacyidea_pam.py url=https://<PRIVACYIDEA_BASE_URL> cacerts=/etc/ssl/certs/ca-certificates.crt debug
+auth    requisite                       pam_deny.so
+auth    required                        pam_permit.so
+session sufficient                      pam_permit.so
+account [success=1 default=ignore]      pam_ldap.so config=/etc/security/pam_ldap_openvpn.conf
+account requisite                       pam_deny.so
+account sufficient                      pam_permit.so

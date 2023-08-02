@@ -17,6 +17,9 @@ Setup instructions are written for a Debian Bullseye server.
 
 In Bullseye `libpam-python` is Python-2 based which adds a lot of complexity to the setup of the venv (in Bookworm it is Python-3). 
 
+The setup partially overlaps with [SSHD with Privacyidea](../sshd_privacyidea/README.md), the sections 
+'Create a python2 venv' and 'Install and configure privacyidea_pam' can be skipped here when they are already setup.
+
 Assumptions:
 - A X509 certificate and a key file suitable for openvpn are available
 - A X509 ca.crt file is available
@@ -59,8 +62,14 @@ openvpn --genkey --secret /etc/openvpn/server/ta.key
 - Edit `/etc/openvpn/ccd_password/DEFAULT`:
   - Set local network details in `route`
   - Set IP-addresses of Samba-DCs in `dhcp-option DNS`
+
  
-- Create a python2 venv:
+- Copy `pam-openvpn` to `/etc/pam.d/openvpn`
+- Edit `/etc/pam.d/openvpn`:
+  - Set `<PRIVACYIDEA_BASE_URL>` to the URL of Privacyidea
+
+
+- Create a python2 venv (skip this if already setup for SSHD + Privacyidea):
 
 ```bash
 mkdir -p /opt/privacyidea_pam/get_pip_root
@@ -72,7 +81,8 @@ source /opt/privacyidea_pam/bin/activate
 pip install pip setuptools wheel --upgrade
 ```
 
-- Install privacyidea_pam
+
+- Install and configure privacyidea_pam (skip this if already setup for SSHD + Privacyidea)
 
 ```bash
 source /opt/privacyidea_pam/bin/activate
@@ -97,11 +107,7 @@ cat << EOF | patch -p1
 EOF
 cd -
 mkdir /etc/privacyidea
-```
 
-  Initialize Sqlite database for privacyidea_pam
-
-```bash
 touch /etc/privacyidea/pam.sqlite
 chmod 0600 /etc/privacyidea/pam.sqlite
 cat << EOF | sqlite3 /etc/privacyidea/pam.sqlite
@@ -110,10 +116,8 @@ CREATE TABLE refilltokens (serial text, refilltoken text);
 EOF 
 ```
 
-- Copy `pam-openvpn` to `/etc/pam.d/openvpn`
 
-
-- Create a service-account in Samba
+- Create a service-account in Samba (or skip if you re-use the account created for SSHD + Privacyidea)
 
 ```bash
 # On one of the DCs:
@@ -124,15 +128,17 @@ samba-tool user create <SERVICE-ACCOUNT NAME>
 samba-tool user show <SERVICE-ACCOUNT NAME>
 ```
 
-- Copy `pam_ldap.conf` to `/etc/pam_ldap.conf`
-- Update permissions: `chmod 0640 /etc/pam_ldap.conf`
-- Edit `/etc/pam_ldap.conf`:
+- Copy `pam_ldap.conf` to `/etc/security/pam_ldap_openvpn.conf`
+- Update permissions: `chmod 0640 /etc/security/pam_ldap_openvpn.conf`
+- Edit `/etc/security/pam_ldap_openvpn.conf`:
   - Set DC hostnames in `uri`
   - Set DN of the SERVICE-ACCOUNT in `binddn`
   - Set password of the SERVICE-ACCOUNT in `bindpw`
   - Set base-DN in `base`
   - Set DN of the PERMISSION-GROUP in `pam_filter`
 
+
+- Restart openvpn
 
 ### OpenVPN Windows client configuration
 

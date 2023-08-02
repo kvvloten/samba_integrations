@@ -21,9 +21,19 @@ Setup details are in README [here](privacyidea/README.md)
 
 OpenVPN setup with Privacyidea MFA authentication and Samba LDAP authorization based on nested group membership.
 
-This requires the above Privacyidea setup.
+This requires the above 'Privacyidea' setup and has shared components with 'SSHD with Privacyidea'
 
 Setup details are in README [here](openvpn_privacyidea/README.md) 
+
+
+## SSHD with Privacyidea MFA and Samba authorization (for access from internet)
+
+SSHD split setup with Privacyidea MFA authentication and Samba LDAP authorization based on nested group membership for 
+access from internet and default login for access from the local network.
+
+This requires the above 'Privacyidea' setup and has shared components with 'Openvpn with Privacyidea'
+
+Setup details are in README [here](sshd_privacyidea/README.md) 
 
 
 ## Password notifier
