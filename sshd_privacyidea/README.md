@@ -20,6 +20,8 @@ The setup partially overlaps with [Openvpn with Privacyidea](../openvpn_privacyi
 
 Assumptions:
 - Samba-AD has a (nested-) group 'PERMISSION-GROUP' that contains users with permission to login from internet on this server. 
+- The users to login are known / can be resolved on the host (e.g. through winbind-nss)
+- The users to login have a home-directory (or pam-mkhomedir should be added to create it) 
 
 ### Setup steps
 
