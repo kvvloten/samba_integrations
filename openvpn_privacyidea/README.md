@@ -30,7 +30,7 @@ Assumptions:
 - Install packages
 
 ```bash
-apt-get install python2 libpam-python libpam-ldap openvpn sqlite3 curl
+apt-get install libpam-ldap openvpn
 
 # We do not want to use pam-ldap for standard logins:
 pam-auth-update --remove ldap
@@ -72,6 +72,7 @@ openvpn --genkey --secret /etc/openvpn/server/ta.key
 - Create a python2 venv (skip this if already setup for SSHD + Privacyidea):
 
 ```bash
+apt-get install python2 curl
 mkdir -p /opt/privacyidea_pam/get_pip_root
 curl -s https://bootstrap.pypa.io/pip/2.7/get-pip.py > /opt/privacyidea_pam/get-pip.py
 python2 /opt/privacyidea_pam/get-pip.py --no-python-version-warning --no-warn-script-location --prefix /opt/privacyidea_pam/get_pip_root
@@ -85,6 +86,7 @@ pip install pip setuptools wheel --upgrade
 - Install and configure privacyidea_pam (skip this if already setup for SSHD + Privacyidea)
 
 ```bash
+apt-get install libpam-python sqlite3 curl
 source /opt/privacyidea_pam/bin/activate
 pip install -r https://raw.githubusercontent.com/privacyidea/pam_python/master/requirements.txt
 curl -s https://raw.githubusercontent.com/privacyidea/pam_python/master/privacyidea_pam.py > /opt/privacyidea_pam/lib/python2.7/site-packages/privacyidea_pam.py
