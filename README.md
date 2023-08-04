@@ -43,6 +43,13 @@ Send notification and warning mails to your users about password expiry
 Setup details are in README [here](password_notifier/README.md) 
 
 
+## Self Service Password webinterface
+
+Web interface to change in an LDAP directory.
+
+Setup details are in README [here](password_notifier/README.md) 
+
+
 ## Cron- and management scripts for Samba-AD controllers
 
 Cron scripts:

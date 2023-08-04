@@ -14,7 +14,6 @@ Setup instructions are written for a Debian server.
 The instructions below will use a Postgresql database but other databases are supported, see [docuementation](https://privacyidea.readthedocs.io/en/latest/installation/pip.html#database)
 
 Assumptions:
-
 - Postgresql is already setup, possible on a different server.
 - Apache2 is setup on the same server as Privacyidea and has a TLS enabled vhost ready to use. 
 
