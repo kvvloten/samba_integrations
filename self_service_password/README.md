@@ -1,7 +1,18 @@
 # Self Service Password webinterface
 
+**DISCLAIMER: Use of anything provided here is at you own risk!**
+
 Web interface to change in an LDAP directory. 
 The project's github page is [here](https://github.com/ltb-project/self-service-password) 
+
+```text
+               ________________                          _______________
+              |                |                        |               |
+  User WebUI  |  Self-Service  |  LDAP password change  |  Samba AD-DC  |
+  ----------> |  Password      | ---------------------> |               |
+              |                |                        |               |
+               ----------------                          ---------------
+```
 
 
 ## Setup

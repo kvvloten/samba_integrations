@@ -1,6 +1,19 @@
 # Password notifier
 
+**DISCLAIMER: Use of anything provided here is at you own risk!**
+
 Send notification and warning mails to your users about password expiry
+
+```text
+         _____________                _______________
+        |             |  LDAP-query  |               |
+        |  Password   | -----------> |  Samba AD-DC  |
+        |  notifier   |              |               |
+        |             |              |               |
+         -------------                ---------------
+              |
+              +--->  /usr/bin/sendmail
+```
 
 
 ## Setup

@@ -7,6 +7,14 @@
 
 Anonymous LDAP-proxy in front of Samba-AD is useful for older devices (e.g. printers) that cannot do LDAPS (or starttls) with modern ciphers.
 
+```text
+  Anonymous    _____________                 _______________
+  LDAP-query  |  anonymous  |  LDAP-query   |               |
+ -----------> |  OpenLDAP   | ------------> |  Samba AD-DC  |
+              |  proxy      |               |               |
+               -------------                 ---------------
+```
+
 Setup details are in README [here](anonymous_ldap_proxy/README.md) 
 
 
@@ -14,12 +22,36 @@ Setup details are in README [here](anonymous_ldap_proxy/README.md)
 
 Privacyidea is versatile multi-factor authentication system. When configured with Samba as backend users get MFA with their Samba user-id.
 
+```text
+  Anonymous    _____________                 _______________
+  LDAP-query  |  anonymous  |  LDAP-query   |               |
+ -----------> |  OpenLDAP   | ------------> |  Samba AD-DC  |
+              |  proxy      |               |               |
+               -------------                 ---------------
+```
+
 Setup details are in README [here](privacyidea/README.md) 
 
 
 ## Openvpn with Privacyidea MFA and Samba authorization
 
 OpenVPN setup with Privacyidea MFA authentication and Samba LDAP authorization based on nested group membership.
+
+```text
+  ___________              ___________ _______                  _______________  
+ |           |     MFA    |           |       |    authn MFA   |               | 
+ |  OpenVPN  | <========> |  Openvpn  |  Pam  | -------------> |  Privacyidea  | 
+ |  client   |            |  server   |       | -+             |               | 
+ |           |            |           |       |  |              ---------------  
+  -----------              ----------- -------   |          LDAP     |  ^ LDAP
+                                                 |          account  |  | attributes
+                                                 |          validate V  |           
+                                                 |              _______________  
+                                                 | authz LDAP  |               | 
+                                                 +-----------> |  Samba AD-DC  | 
+                                                               |               | 
+                                                                ---------------  
+```
 
 This requires the above 'Privacyidea' setup and has shared components with 'SSHD with Privacyidea'
 
@@ -31,6 +63,26 @@ Setup details are in README [here](openvpn_privacyidea/README.md)
 SSHD split setup with Privacyidea MFA authentication and Samba LDAP authorization based on nested group membership for 
 access from internet and default login for access from the local network.
 
+```text
+    __   _                  __________ _______                     _______________  
+  _(  )_( )_               |          |       |       authn MFA   |               | 
+ (          )     MFA      |  SSH     |  Pam  | ----------------> |  Privacyidea  | 
+(  INTERNET  ) <=========> |  daemon  |       | ----+             |               | 
+ (_   _    _)              |          |       |     |              ---------------  
+   (_) (__)                :..........: ------      |          LDAP     |  ^ LDAP
+                           :          :             |          account  |  | attributes
+    ___   _                :          :             |          validate V  |           
+   [(_)] |=|               :..........: ______      |              _______________  
+    '-`  |_|               |          |       |     | authz LDAP  |               | 
+   /mmm/  /                |  SSH     | Pam   |     +-----------> |  Samba AD-DC  | 
+ ________|____ <========>  |  daemon  |       |                   |               | 
+     |    LAN   password   |          |       |                    ---------------  
+ ___  \_                    ---------- -------                                       
+[(_)] |=|                                 |                     
+ '-`  |_|                                 +---> via nsswitch, e.g. files, systemd, winbind          
+/mmm/                                                          
+```
+
 This requires the above 'Privacyidea' setup and has shared components with 'Openvpn with Privacyidea'
 
 Setup details are in README [here](sshd_privacyidea/README.md) 
@@ -40,12 +92,32 @@ Setup details are in README [here](sshd_privacyidea/README.md)
 
 Send notification and warning mails to your users about password expiry
 
+```text
+         _____________                _______________
+        |             |  LDAP-query  |               |
+        |  Password   | -----------> |  Samba AD-DC  |
+        |  notifier   |              |               |
+        |             |              |               |
+         -------------                ---------------
+              |
+              +--->  /usr/bin/sendmail
+```
+
 Setup details are in README [here](password_notifier/README.md) 
 
 
 ## Self Service Password webinterface
 
 Web interface to change in an LDAP directory.
+
+```text
+               ________________                          _______________
+              |                |                        |               |
+  User WebUI  |  Self-Service  |  LDAP password change  |  Samba AD-DC  |
+  ----------> |  Password      | ---------------------> |               |
+              |                |                        |               |
+               ----------------                          ---------------
+```
 
 Setup details are in README [here](password_notifier/README.md) 
 

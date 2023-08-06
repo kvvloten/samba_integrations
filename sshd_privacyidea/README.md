@@ -1,5 +1,7 @@
 # SSHD with Privacyidea MFA and Samba authorization (for access from internet)
 
+**DISCLAIMER: Use of anything provided here is at you own risk!**
+
 SSHD setup with Privacyidea MFA authentication and Samba LDAP authorization based on nested group membership.
 
 The configuration uses a split setup aimed at a DMZ-host with SSHD open to the internal network and to the internet. 
@@ -8,6 +10,25 @@ The default login for local network users is not touched by the setup below.
 
 A description of how to setup Privacyidea with Samba backend is [here](../privacyidea/README.md)
 
+```text
+    __   _                  __________ _______                     _______________  
+  _(  )_( )_               |          |       |       authn MFA   |               | 
+ (          )     MFA      |  SSH     |  Pam  | ----------------> |  Privacyidea  | 
+(  INTERNET  ) <=========> |  daemon  |       | ----+             |               | 
+ (_   _    _)              |          |       |     |              ---------------  
+   (_) (__)                :..........: ------      |          LDAP     |  ^ LDAP
+                           :          :             |          account  |  | attributes
+    ___   _                :          :             |          validate V  |           
+   [(_)] |=|               :..........: ______      |              _______________  
+    '-`  |_|               |          |       |     | authz LDAP  |               | 
+   /mmm/  /                |  SSH     | Pam   |     +-----------> |  Samba AD-DC  | 
+ ________|____ <========>  |  daemon  |       |                   |               | 
+     |    LAN   password   |          |       |                    ---------------  
+ ___  \_                    ---------- -------                                       
+[(_)] |=|                                 |                     
+ '-`  |_|                                 +---> via nsswitch, e.g. files, systemd, winbind          
+/mmm/                                                          
+```
 
 ## Setup
 

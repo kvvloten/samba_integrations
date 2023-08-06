@@ -1,5 +1,7 @@
 # Openvpn with Privacyidea MFA and Samba authorization
 
+**DISCLAIMER: Use of anything provided here is at you own risk!**
+
 OpenVPN setup with Privacyidea MFA authentication and Samba LDAP authorization based on nested group membership.
 
 A description of how to setup Privacyidea with Samba backend is [here](../privacyidea/README.md)
@@ -11,6 +13,23 @@ This forces new authentication sequence and will lockout user that got disabled 
 The OpenVPN server is setup to push client configuration settings when a client connects. 
 This keeps maintenance on the client.conf low.
 
+```text
+  ___________              ___________ _______                  _______________  
+ |           |     MFA    |           |       |    authn MFA   |               | 
+ |  OpenVPN  | <========> |  Openvpn  |  Pam  | -------------> |  Privacyidea  | 
+ |  client   |            |  server   |       | -+             |               | 
+ |           |            |           |       |  |              ---------------  
+  -----------              ----------- -------   |          LDAP     |  ^ LDAP
+                                                 |          account  |  | attributes
+                                                 |          validate V  |           
+                                                 |              _______________  
+                                                 | authz LDAP  |               | 
+                                                 +-----------> |  Samba AD-DC  | 
+                                                               |               | 
+                                                                ---------------  
+```
+
+
 ## Setup
 
 Setup instructions are written for a Debian Bullseye server.
@@ -21,7 +40,7 @@ The setup partially overlaps with [SSHD with Privacyidea](../sshd_privacyidea/RE
 'Create a python2 venv' and 'Install and configure privacyidea_pam' can be skipped here when they are already setup.
 
 Assumptions:
-- A X509 certificate and a key file suitable for openvpn are available
+- A X509 (server-) certificate and a key file suitable for openvpn are available
 - A X509 ca.crt file is available
 - Samba-AD has a (nested-) group 'PERMISSION-GROUP' that contains users with permission to use OpenVPN 
 

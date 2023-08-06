@@ -1,9 +1,21 @@
 # Privacyidea with Samba backend
 
+**DISCLAIMER: Use of anything provided here is at you own risk!**
+
 [Privacyidea](https://github.com/privacyidea/privacyidea) is a versatile multi-factor authentication system. When configured with Samba as backend users get MFA with their Samba user-id.  
 
 Privacyidea supports a variety of tokens and integrations, e.g. Openvpn integration and 2FA for Windows domain-clients. A list of features is [here](https://www.privacyidea.org/about/features/)
 
+```text
+             | WebUI for users
+             | to manage MFA tokens
+             V 
+         _______________                _______________
+   MFA  |               |  LDAP-query  |               |
+ -----> |  Privacyidea  | -----------> |  Samba AD-DC  |
+        |               |              |               |
+         ---------------                ---------------
+```
 
 ## Setup
 
@@ -29,7 +41,7 @@ PRIVACYIDEA_VERSION=3.8.1
 apt-get install postgresql-client python3-pip python3-venv makepasswd apache2 libapache2-mod-wsgi-py3 jq curl
 
 mkdir /etc/privacyidea /var/log/privacyidea /opt/privacyidea
-adduser -d /opt/privacyidea/wsgi -m -r -s /usr/sbin/nologin -U -G www-data privacyidea
+useradd -d /opt/privacyidea/wsgi -m -r -s /usr/sbin/nologin -U -G www-data privacyidea
 mkdir -m 0750 /opt/privacyidea/venv
 python3 -m venv /opt/privacyidea/venv
 source /opt/privacyidea/venv/bin/activate
@@ -49,7 +61,7 @@ On the Postgresql host:
 
 ```bash
 # DATABASE PASSWORD:
-makepasswd --chars=24
+makepasswd --chars=32
 sudo -i
 su - postgres
 psql
@@ -83,7 +95,6 @@ makepasswd --chars=24
 - Initial setup commands:
 
 ```bash
-su - privacyidea
 usermod -s "/bin/bash" privacyidea
 su - privacyidea
 PRIVACYIDEA_CONFIGFILE="/etc/privacyidea/pi.cfg"
@@ -163,7 +174,7 @@ curl -s --request POST \
 curl -s --request POST \
     --header "Authorization: ${TOKEN}" \
     --header "Content-Type: application/json" \
-     --data "{\"resolvers\": \"users_${DOMAIN}\", \"priority.users_${DOMAIN}\": 1}" \ 
+    --data "{\"resolvers\": \"users_${DOMAIN}\", \"priority.users_${DOMAIN}\": 1}" \ 
     "${BASE_URL}/realm/${DOMAIN}" 
 
 # Set the default realm (users in default realm can login without specifying the realm)

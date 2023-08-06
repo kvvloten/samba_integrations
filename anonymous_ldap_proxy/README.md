@@ -1,8 +1,18 @@
 # Setup anonymous LDAP-proxy
 
+**DISCLAIMER: Use of anything provided here is at you own risk!**
+
 Anonymous LDAP-proxy in front of Samba-AD is useful for older devices (e.g. printers) that cannot do LDAPS (or starttls) with modern ciphers.
 
 Access should be restricted to those older devices with iptables or nftables.
+
+```text
+  Anonymous    _____________                 _______________
+  LDAP-query  |  anonymous  |  LDAP-query   |               |
+ -----------> |  OpenLDAP   | ------------> |  Samba AD-DC  |
+              |  proxy      |               |               |
+               -------------                 ---------------
+```
 
 ## Setup
 
