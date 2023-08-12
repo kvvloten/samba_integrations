@@ -1,0 +1,24 @@
+---
+_meta:
+  type: "roles"
+  config_version: 2
+
+role_samba_smb:
+  cluster_permissions:
+  - cluster:monitor/health
+  - indices:data/write/bulk
+  index_permissions:
+  - allowed_actions:
+    - indices:admin/create
+    - indices:admin/mapping/put
+    - indices:admin/put
+    - indices:data/write/bulk
+    - indices:data/write/bulk*
+    - indices:data/write/delete
+    - indices:data/write/index
+    - indices:data/write/update
+    - indices:data/read/search
+    - indices:monitor/stats
+    index_patterns:
+    - samba_smb
+    - samba_smb_folder
