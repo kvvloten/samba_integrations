@@ -1,0 +1,28 @@
+---
+# This is the internal user database
+# The hash value is a bcrypt hash and can be generated with plugin/tools/hash.sh
+
+_meta:
+  type: "internalusers"
+  config_version: 2
+
+admin:
+  hash: "<OPENSEARCH-ADMIN-PW-HASH>"
+  reserved: true
+  backend_roles: []
+  description: ""
+kibanaserver:
+  hash: "<OPENSEARCH-KIBANA-PW-HASH>"
+  reserved: true
+  backend_roles: []
+  description: ""
+
+local_fscrawler:
+  hash: "<OPENSEARCH-LOCAL-FSCRAWLER-PW-HASH>"
+  reserved: true
+  backend_roles: ["client_samba_smb"]
+
+local_samba:
+  hash: "<OPENSEARCH-LOCAL-SAMBA-PW-HASH>"
+  reserved: true
+  backend_roles: ["client_samba_smb"]

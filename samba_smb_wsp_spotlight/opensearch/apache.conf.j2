@@ -1,0 +1,10 @@
+# Disable certificate name check
+SSLProxyCheckPeerCN off
+SSLProxyCheckPeerName off
+
+SSLProxyMachineCertificateFile {{ i_client_cert_path }}
+
+<Location />
+    ProxyPass https://127.0.0.1:9200/
+    ProxyPassReverse https://127.0.0.1:9200/
+</Location>

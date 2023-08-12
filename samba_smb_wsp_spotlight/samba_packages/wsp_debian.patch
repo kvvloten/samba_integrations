@@ -1,0 +1,38 @@
+diff -ur a/debian/rules b/debian/rules
+--- a/debian/rules 2023-08-05 23:36:44.100652042 +0200
++++ b/debian/rules 2023-08-09 16:25:21.713580932 +0200
+@@ -63,6 +63,7 @@
+ 	--with-gpgme \
+ 	--enable-avahi \
+ 	--enable-spotlight \
++	--enable-wsp \
+ 	--with-profiling-data \
+ 	--disable-rpath --disable-rpath-install \
+ 	--with-shared-modules=idmap_rid,idmap_ad,idmap_adex,idmap_hash,idmap_ldap,idmap_tdb2,vfs_dfs_samba4,auth_samba4,vfs_nfs4acl_xattr \
+diff -ur a/debian/smbclient.install b/debian/smbclient.install
+--- a/debian/smbclient.install 2023-08-09 18:15:41.357504187 +0200
++++ b/debian/smbclient.install 2023-08-09 18:19:56.647025245 +0200
+@@ -9,6 +9,7 @@
+ usr/bin/smbspool
+ usr/bin/smbtar
+ usr/bin/smbtree
++usr/bin/wspsearch
+ usr/libexec/samba/smbspool_krb5_wrapper
+ #usr/share/man/man1/findsmb.1
+ usr/share/man/man1/mdsearch.1
+diff -ur a/debian/samba-common-bin.install b/debian/samba-common-bin.install
+--- a/debian/samba-common-bin.install 2023-08-09 17:08:13.402316697 +0200
++++ b/debian/samba-common-bin.install 2023-08-09 18:19:56.663026094 +0200
+@@ -5,6 +5,7 @@
+ usr/bin/samba-tool
+ usr/bin/smbpasswd
+ usr/bin/testparm
++usr/bin/wsp-to
+ usr/sbin/samba_kcc
+ usr/share/apport/package-hooks/source_samba.py
+ usr/share/man/man1/dbwrap_tool.1
+@@ -25,3 +26,4 @@
+ usr/libexec/samba/samba-dcerpcd
+ usr/share/man/man8/samba-dcerpcd.8
+ usr/libexec/samba/rpcd_*
++usr/libexec/samba/wspd
