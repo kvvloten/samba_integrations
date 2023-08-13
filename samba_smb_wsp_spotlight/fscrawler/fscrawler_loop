@@ -11,7 +11,13 @@ while true; do
         echo
         echo "====== STARTING JOB: ${JOB_PREFIX}_${SHARE_NAME} ======="
         echo
-        # ${BASE_PATH}/current/bin/fscrawler ${JOB_PREFIX}_${SHARE_NAME} --loop 1
+        if [[ -f "${BASE_PATH}/etc/${JOB_PREFIX}_${SHARE_NAME}/_status.json" ]] && \
+           [[ ! -s "${BASE_PATH}/etc/${JOB_PREFIX}_${SHARE_NAME}/_status.json" ]]; then
+
+            echo "Removing broken status file, causing full reindex"
+            rm "${BASE_PATH}/etc/${JOB_PREFIX}_${SHARE_NAME}/_status.json"
+        fi 
+        ${BASE_PATH}/current/bin/fscrawler ${JOB_PREFIX}_${SHARE_NAME} --loop 1
     done
     
     echo "====== SLEEPING ${INTERVAL} ======="
