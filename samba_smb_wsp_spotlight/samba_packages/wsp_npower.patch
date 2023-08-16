@@ -1,4 +1,5 @@
-Subject: [PATCH] rename elasticsearch:acl_filtering -> elasticsearch:wsp_acl_filtering
+Subject: [PATCH] s3/utils/wspsearch: avoid accessing deleted memory :/
+rename elasticsearch:acl_filtering -> elasticsearch:wsp_acl_filtering
 fix compile error post update to 4.17.9
 honour client and server result limits better
 fix one off error with special start of resultset bookmark
@@ -157,15 +158,2372 @@ libcli/util: add tstream_full_request_u32 and tstream_full_request_u16
 s3: smbd: Move check_fsp_open() and check_fsp() to smb1_reply.c
 s3: smbd: Ensure check_fsp_ntquota_handle() doesn't send SMB1 error packets.
 s3: smbd: SMB1 check_fsp_open() implicitly calls reply_nterror(.., NT_STATUS_INVALID_HANDLE) on error so don't duplicate in reply_close().
+s3:smbd: fix multichannel connection passing race
+s3:smbd: always clear filter_subreq in smb2srv_client_mc_negprot_next()
+s4:torture/smb2: add smb2.multichannel.bugs.bug_15346
+s4:torture/smb2: make it possible to pass existing_conn to smb2_connect_ext()
+s4:torture/smb2: let us have a common torture_smb2_con_share()
+s4:torture/smb2: let torture_smb2_con_sopt() use smb2_connect()
+smbXcli: Pass negotiate contexts through smbXcli_negprot_send/recv
+s3: smbd: Sanitize any "server" and "share" components of SMB1 DFS paths to remove UNIX separators.
+dcerpc.idl: fix definitions for DCERPC_PKT_CO_CANCEL and DCERPC_PKT_ORPHANED payload
+librpc/rpc: let dcerpc_read_ncacn_packet_next_vector() handle fragments without any payload
+s4:torture/ndr: add tests for DCERPC_PKT_CO_CANCEL and DCERPC_PKT_ORPHANED
+vfs_aio_pthread: fix segfault if samba-tool ntacl get
+vfs_aio_pthread: don't crash without a pthreadpool
+s3/modules: Fix DFS links when widelinks = yes
+s3/modules: Add flag indicating if connected share is a dfs share
+sefltest: Add new regression test dfs with widelinks = yes
+selftest: Add new dfs share (with widelinks enabled)
+s3/utils: avoid erronous NO MEMORY detection
+dsdb: Use samdb_system_container_dn() in pdb_samba_dsdb_*()
+dsdb: Use samdb_system_container_dn() in dsdb_trust_*()
+s4-rpc_server/backupkey: Use samdb_system_container_dn() in get_lsa_secret()
+s4-rpc_server/backupkey: Use samdb_system_container_dn() in set_lsa_secret()
+s4-rpc_server/netlogon: Use samdb_system_container_dn() in fill_trusted_domains_array()
+s4-rpc_server/lsa: Use samdb_system_container_dn() in dcesrv_lsa_get_policy_state()
+dsdb: Use samdb_get_system_container_dn() to get Password Settings Container
+dsdb: Use samdb_system_container_dn() in samldb.c
+dsdb: Add new function samdb_system_container_dn()
+Bug #9959: Don't search for CN=System
+For Bug #9959: local talloc frame for next commit
+mdssvc: fix returning file modification date for older Mac releases
+mdssvc: fix date marshalling
+mdssvc: prepare for returning timestamps with sub-seconds granularity
+mdssvc: reduce pagesize to 50
+tests/mdssvc: match hits:total:value to be the actual amount of entries in hits
+mdssvc: fix enforcement of "elasticsearch:max results"
+mdssvc: add and use SL_PAGESIZE
+mdssvc: fix long running backend queries
+mdssvc: set query state for continued queries to SLQ_STATE_RUNNING
+smbd: don't leak the fsp if close_file_smb() fails
 ---
+Index: source3/smbd/smb2_close.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source3/smbd/smb2_close.c b/source3/smbd/smb2_close.c
+--- a/source3/smbd/smb2_close.c	(revision 8a602310cebc74e8958fb44dd5b7db83913ea9eb)
++++ b/source3/smbd/smb2_close.c	(revision cdce89e434e258dcf6d58e8510b2f5bf42841932)
+@@ -225,6 +225,8 @@
+ 	if (!NT_STATUS_IS_OK(status)) {
+ 		DEBUG(5,("smbd_smb2_close: close_file[%s]: %s\n",
+ 			 smb_fname_str_dbg(smb_fname), nt_errstr(status)));
++		file_free(smbreq, fsp);
++		*_fsp = fsp = NULL;
+ 		return status;
+ 	}
+ 
+Index: source3/rpc_server/mdssvc/mdssvc.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source3/rpc_server/mdssvc/mdssvc.c b/source3/rpc_server/mdssvc/mdssvc.c
+--- a/source3/rpc_server/mdssvc/mdssvc.c	(revision cdce89e434e258dcf6d58e8510b2f5bf42841932)
++++ b/source3/rpc_server/mdssvc/mdssvc.c	(revision 947790f8d76d3aab518116d8af1a55cecf2f67ae)
+@@ -188,8 +188,10 @@
+ 			if (result != 0) {
+ 				return false;
+ 			}
+-		} else if (strcmp(attribute, "kMDItemFSContentChangeDate") == 0) {
+-			sl_time.tv_sec = sp->st_ex_mtime.tv_sec;
++		} else if (strcmp(attribute, "kMDItemFSContentChangeDate") == 0 ||
++			strcmp(attribute, "kMDItemContentModificationDate") == 0)
++		{
++			sl_time = convert_timespec_to_timeval(sp->st_ex_mtime);
+ 			result = dalloc_add_copy(meta, &sl_time, sl_time_t);
+ 			if (result != 0) {
+ 				return false;
+@@ -306,10 +308,21 @@
+ static bool add_results(sl_array_t *array, struct sl_query *slq)
+ {
+ 	sl_filemeta_t *fm;
+-	uint64_t status = 0;
++	uint64_t status;
+ 	int result;
+ 	bool ok;
+ 
++	/*
++	 * Taken from a network trace against a macOS SMB Spotlight server. If
++	 * the first fetch-query-results has no results yet because the search
++	 * is still running, macOS returns 0x23, otherwise 0x0.
++	 */
++	if (slq->state >= SLQ_STATE_RESULTS ) {
++		status = 0;
++	} else {
++		status = 0x23;
++	}
++
+ 	/* FileMeta */
+ 	fm = dalloc_zero(array, sl_filemeta_t);
+ 	if (fm == NULL) {
+@@ -1126,7 +1139,7 @@
+ 			goto error;
+ 		}
+ 		if (slq->state == SLQ_STATE_FULL) {
+-			slq->state = SLQ_STATE_RESULTS;
++			slq->state = SLQ_STATE_RUNNING;
+ 			slq->mds_ctx->backend->search_cont(slq);
+ 		}
+ 		break;
+Index: source3/rpc_server/mdssvc/mdssvc.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source3/rpc_server/mdssvc/mdssvc.h b/source3/rpc_server/mdssvc/mdssvc.h
+--- a/source3/rpc_server/mdssvc/mdssvc.h	(revision 19f10cb9d7d757a996eaa23a82c9e89ca9006bc5)
++++ b/source3/rpc_server/mdssvc/mdssvc.h	(revision e7eb22862145cd25cd372a6fd438b1ed596b714e)
+@@ -36,6 +36,7 @@
+ 
+ #define MAX_SL_FRAGMENT_SIZE 0xFFFFF
+ #define MAX_SL_RESULTS 100
++#define SL_PAGESIZE 50
+ #define MAX_SL_RUNTIME 30
+ #define MDS_TRACKER_ASYNC_TIMEOUT_MS 250
+ 
+Index: source3/rpc_server/mdssvc/mdssvc_es.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source3/rpc_server/mdssvc/mdssvc_es.c b/source3/rpc_server/mdssvc/mdssvc_es.c
+--- a/source3/rpc_server/mdssvc/mdssvc_es.c	(revision 19f10cb9d7d757a996eaa23a82c9e89ca9006bc5)
++++ b/source3/rpc_server/mdssvc/mdssvc_es.c	(revision 57d8d00799c882f4a2007443e6a3930500a3ffe6)
+@@ -398,7 +398,7 @@
+ 		.ev = mds_es_ctx->mdssvc_es_ctx->mdssvc_ctx->ev_ctx,
+ 		.mds_es_ctx = mds_es_ctx,
+ 		.slq = slq,
+-		.size = MAX_SL_RESULTS,
++		.size = SL_PAGESIZE,
+ 	};
+ 
+ 	/* 0 would mean no limit */
+@@ -502,7 +502,7 @@
+ 		goto trigger;
+ 	}
+ 
+-	if (slq->query_results->num_results >= MAX_SL_RESULTS) {
++	if (slq->query_results->num_results >= SL_PAGESIZE) {
+ 		slq->state = SLQ_STATE_FULL;
+ 		goto trigger;
+ 	}
+@@ -693,7 +693,7 @@
+ 	subreq = http_read_response_send(state,
+ 					 state->ev,
+ 					 state->s->mds_es_ctx->http_conn,
+-					 MAX_SL_RESULTS * 8192);
++					 SL_PAGESIZE * 8192);
+ 	if (tevent_req_nomem(subreq, req)) {
+ 		return;
+ 	}
+@@ -800,7 +800,7 @@
+ 	}
+ 	DBG_DEBUG("Hits: %zu\n", hits);
+ 
+-	for (i = 0; i < hits; i++) {
++	for (i = 0; i < hits && s->from + i < s->max; i++) {
+ 		const char *path = NULL;
+ 
+ 		match = json_array_get(matches, i);
+Index: python/samba/tests/dcerpc/mdssvc.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/python/samba/tests/dcerpc/mdssvc.py b/python/samba/tests/dcerpc/mdssvc.py
+--- a/python/samba/tests/dcerpc/mdssvc.py	(revision 57d8d00799c882f4a2007443e6a3930500a3ffe6)
++++ b/python/samba/tests/dcerpc/mdssvc.py	(revision e7eb22862145cd25cd372a6fd438b1ed596b714e)
+@@ -125,7 +125,7 @@
+ 
+     def test_mdscli_search(self):
+         exp_json_query = r'''{
+-          "from": 0, "size": 100, "_source": ["path.real"],
++          "from": 0, "size": 50, "_source": ["path.real"],
+           "query": {
+             "query_string": {
+               "query": "(samba*) AND path.real.fulltext:\"%BASEPATH%\""
+@@ -157,7 +157,7 @@
+             r'kMDItemFSName=="x\\x"'
+         )
+         exp_json_query = r'''{
+-          "from": 0, "size": 100, "_source": ["path.real"],
++          "from": 0, "size": 50, "_source": ["path.real"],
+           "query": {
+             "query_string": {
+               "query": "(file.filename:x\\+x OR file.filename:x\\*x OR file.filename:x=x OR file.filename:x'x OR file.filename:x\\?x OR file.filename:x\\ x OR file.filename:x\\(x OR file.filename:x\\\"x OR file.filename:x\\\\x) AND path.real.fulltext:\"%BASEPATH%\""
+@@ -166,7 +166,7 @@
+         }'''
+         fake_json_response = r'''{
+           "hits" : {
+-            "total" : {"value" : 2},
++            "total" : {"value" : 9},
+             "hits" : [
+               {"_source" : {"path" : {"real" : "%BASEPATH%/x+x"}}},
+               {"_source" : {"path" : {"real" : "%BASEPATH%/x*x"}}},
+Index: python/samba/tests/blackbox/mdsearch.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/python/samba/tests/blackbox/mdsearch.py b/python/samba/tests/blackbox/mdsearch.py
+--- a/python/samba/tests/blackbox/mdsearch.py	(revision 31a6264f8c597d3a5c264f8bf162a9d9aeffbd0a)
++++ b/python/samba/tests/blackbox/mdsearch.py	(revision e7eb22862145cd25cd372a6fd438b1ed596b714e)
+@@ -100,7 +100,7 @@
+         config = os.environ["SMB_CONF_PATH"]
+ 
+         json_in = r'''{
+-          "from": 0, "size": 100, "_source": ["path.real"],
++          "from": 0, "size": 50, "_source": ["path.real"],
+           "query": {
+             "query_string": {
+               "query": "(samba*) AND path.real.fulltext:\"%BASEPATH%\""
+Index: source3/rpc_server/mdssvc/marshalling.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source3/rpc_server/mdssvc/marshalling.c b/source3/rpc_server/mdssvc/marshalling.c
+--- a/source3/rpc_server/mdssvc/marshalling.c	(revision a6fba5581dbe68c199cb1f043e11e8a36d66d992)
++++ b/source3/rpc_server/mdssvc/marshalling.c	(revision c7ee8854d20d68a350a8a2bae2fd915d5211884d)
+@@ -43,8 +43,8 @@
+  * RPC data marshalling and unmarshalling
+  ******************************************************************************/
+ 
+-/* Spotlight epoch is UNIX epoch minus SPOTLIGHT_TIME_DELTA */
+-#define SPOTLIGHT_TIME_DELTA 280878921600ULL
++/* Spotlight epoch is 1.1.2001 00:00 UTC */
++#define SPOTLIGHT_TIME_DELTA 978307200 /* Diff from UNIX epoch to Spotlight epoch */
+ 
+ #define SQ_TYPE_NULL    0x0000
+ #define SQ_TYPE_COMPLEX 0x0200
+@@ -253,6 +253,10 @@
+ {
+ 	uint64_t data;
+ 	uint64_t tag;
++	union {
++		double d;
++		uint64_t w;
++	} ieee_fp_union;
+ 
+ 	tag = sl_pack_tag(SQ_TYPE_DATE, 2, 1);
+ 	offset = sl_push_uint64_val(buf, offset, bufsize, tag);
+@@ -260,7 +264,10 @@
+ 		return -1;
+ 	}
+ 
+-	data = (t.tv_sec + SPOTLIGHT_TIME_DELTA) << 24;
++	ieee_fp_union.d = (double)(t.tv_sec - SPOTLIGHT_TIME_DELTA);
++	ieee_fp_union.d += (double)t.tv_usec / 1000000;
++
++	data = ieee_fp_union.w;
+ 	offset = sl_push_uint64_val(buf, offset, bufsize, data);
+ 	if (offset == -1) {
+ 		return -1;
+@@ -723,6 +730,11 @@
+ 	int i, result;
+ 	struct sl_tag tag;
+ 	uint64_t query_data64;
++	union {
++		double d;
++		uint64_t w;
++	} ieee_fp_union;
++	double fraction;
+ 	sl_time_t t;
+ 
+ 	offset = sl_unpack_tag(buf, offset, bufsize, encoding, &tag);
+@@ -735,9 +747,14 @@
+ 		if (offset == -1) {
+ 			return -1;
+ 		}
+-		query_data64 = query_data64 >> 24;
+-		t.tv_sec = query_data64 - SPOTLIGHT_TIME_DELTA;
+-		t.tv_usec = 0;
++		ieee_fp_union.w = query_data64;
++		fraction = ieee_fp_union.d - (uint64_t)ieee_fp_union.d;
++
++		t = (sl_time_t) {
++			.tv_sec = ieee_fp_union.d + SPOTLIGHT_TIME_DELTA,
++			.tv_usec = fraction * 1000000
++		};
++
+ 		result = dalloc_add_copy(query, &t, sl_time_t);
+ 		if (result != 0) {
+ 			return -1;
+Index: source4/rpc_server/backupkey/dcesrv_backupkey.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source4/rpc_server/backupkey/dcesrv_backupkey.c b/source4/rpc_server/backupkey/dcesrv_backupkey.c
+--- a/source4/rpc_server/backupkey/dcesrv_backupkey.c	(revision 947790f8d76d3aab518116d8af1a55cecf2f67ae)
++++ b/source4/rpc_server/backupkey/dcesrv_backupkey.c	(revision ecbba6aec277ba72e3ad0990c9ac6e0a291b0162)
+@@ -59,10 +59,10 @@
+ 			       const char *name,
+ 			       const DATA_BLOB *lsa_secret)
+ {
++	TALLOC_CTX *frame = talloc_stackframe();
+ 	struct ldb_message *msg;
+ 	struct ldb_result *res;
+-	struct ldb_dn *domain_dn;
+-	struct ldb_dn *system_dn;
++	struct ldb_dn *system_dn = NULL;
+ 	struct ldb_val val;
+ 	int ret;
+ 	char *name2;
+@@ -72,13 +72,9 @@
+ 		NULL
+ 	};
+ 
+-	domain_dn = ldb_get_default_basedn(ldb);
+-	if (!domain_dn) {
+-		return NT_STATUS_INTERNAL_ERROR;
+-	}
+-
+-	msg = ldb_msg_new(mem_ctx);
++	msg = ldb_msg_new(frame);
+ 	if (msg == NULL) {
++		talloc_free(frame);
+ 		return NT_STATUS_NO_MEMORY;
+ 	}
+ 
+@@ -92,15 +88,15 @@
+ 	 * * taillor the function to the particular needs of backup protocol
+ 	 */
+ 
+-	system_dn = samdb_search_dn(ldb, msg, domain_dn, "(&(objectClass=container)(cn=System))");
++	system_dn = samdb_system_container_dn(ldb, frame);
+ 	if (system_dn == NULL) {
+-		talloc_free(msg);
++		talloc_free(frame);
+ 		return NT_STATUS_NO_MEMORY;
+ 	}
+ 
+ 	name2 = talloc_asprintf(msg, "%s Secret", name);
+ 	if (name2 == NULL) {
+-		talloc_free(msg);
++		talloc_free(frame);
+ 		return NT_STATUS_NO_MEMORY;
+ 	}
+ 
+@@ -110,7 +106,7 @@
+ 
+ 	if (ret != LDB_SUCCESS ||  res->count != 0 ) {
+ 		DEBUG(2, ("Secret %s already exists !\n", name2));
+-		talloc_free(msg);
++		talloc_free(frame);
+ 		return NT_STATUS_OBJECT_NAME_COLLISION;
+ 	}
+ 
+@@ -119,41 +115,41 @@
+ 	 * here only if the key didn't exists before
+ 	 */
+ 
+-	msg->dn = ldb_dn_copy(mem_ctx, system_dn);
++	msg->dn = ldb_dn_copy(frame, system_dn);
+ 	if (msg->dn == NULL) {
+-		talloc_free(msg);
++		talloc_free(frame);
+ 		return NT_STATUS_NO_MEMORY;
+ 	}
+ 	if (!ldb_dn_add_child_fmt(msg->dn, "cn=%s", name2)) {
+-		talloc_free(msg);
++		talloc_free(frame);
+ 		return NT_STATUS_NO_MEMORY;
+ 	}
+ 
+ 	ret = ldb_msg_add_string(msg, "cn", name2);
+ 	if (ret != LDB_SUCCESS) {
+-		talloc_free(msg);
++		talloc_free(frame);
+ 		return NT_STATUS_NO_MEMORY;
+ 	}
+ 	ret = ldb_msg_add_string(msg, "objectClass", "secret");
+ 	if (ret != LDB_SUCCESS) {
+-		talloc_free(msg);
++		talloc_free(frame);
+ 		return NT_STATUS_NO_MEMORY;
+ 	}
+-	ret = samdb_msg_add_uint64(ldb, mem_ctx, msg, "priorSetTime", nt_now);
++	ret = samdb_msg_add_uint64(ldb, frame, msg, "priorSetTime", nt_now);
+ 	if (ret != LDB_SUCCESS) {
+-		talloc_free(msg);
++		talloc_free(frame);
+ 		return NT_STATUS_NO_MEMORY;
+ 	}
+ 	val.data = lsa_secret->data;
+ 	val.length = lsa_secret->length;
+ 	ret = ldb_msg_add_value(msg, "currentValue", &val, NULL);
+ 	if (ret != LDB_SUCCESS) {
+-		talloc_free(msg);
++		talloc_free(frame);
+ 		return NT_STATUS_NO_MEMORY;
+ 	}
+-	ret = samdb_msg_add_uint64(ldb, mem_ctx, msg, "lastSetTime", nt_now);
++	ret = samdb_msg_add_uint64(ldb, frame, msg, "lastSetTime", nt_now);
+ 	if (ret != LDB_SUCCESS) {
+-		talloc_free(msg);
++		talloc_free(frame);
+ 		return NT_STATUS_NO_MEMORY;
+ 	}
+ 
+@@ -167,11 +163,11 @@
+ 		DEBUG(2,("Failed to create secret record %s: %s\n",
+ 			ldb_dn_get_linearized(msg->dn),
+ 			ldb_errstring(ldb)));
+-		talloc_free(msg);
++		talloc_free(frame);
+ 		return NT_STATUS_ACCESS_DENIED;
+ 	}
+ 
+-	talloc_free(msg);
++	talloc_free(frame);
+ 	return NT_STATUS_OK;
+ }
+ 
+@@ -183,8 +179,7 @@
+ {
+ 	TALLOC_CTX *tmp_mem;
+ 	struct ldb_result *res;
+-	struct ldb_dn *domain_dn;
+-	struct ldb_dn *system_dn;
++	struct ldb_dn *system_dn = NULL;
+ 	const struct ldb_val *val;
+ 	uint8_t *data;
+ 	const char *attrs[] = {
+@@ -196,17 +191,12 @@
+ 	lsa_secret->data = NULL;
+ 	lsa_secret->length = 0;
+ 
+-	domain_dn = ldb_get_default_basedn(ldb);
+-	if (!domain_dn) {
+-		return NT_STATUS_INTERNAL_ERROR;
+-	}
+-
+ 	tmp_mem = talloc_new(mem_ctx);
+ 	if (tmp_mem == NULL) {
+ 		return NT_STATUS_NO_MEMORY;
+ 	}
+ 
+-	system_dn = samdb_search_dn(ldb, tmp_mem, domain_dn, "(&(objectClass=container)(cn=System))");
++	system_dn = samdb_system_container_dn(ldb, tmp_mem);
+ 	if (system_dn == NULL) {
+ 		talloc_free(tmp_mem);
+ 		return NT_STATUS_NO_MEMORY;
+Index: source4/rpc_server/lsa/lsa_init.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source4/rpc_server/lsa/lsa_init.c b/source4/rpc_server/lsa/lsa_init.c
+--- a/source4/rpc_server/lsa/lsa_init.c	(revision 517339b17553eeaa0b95b44237899d381896de68)
++++ b/source4/rpc_server/lsa/lsa_init.c	(revision cabc229210d6af37a3250c396c7b112605898e43)
+@@ -146,10 +146,9 @@
+ 
+ 	/* work out the system_dn - useful for so many calls its worth
+ 	   fetching here */
+-	state->system_dn = samdb_search_dn(state->sam_ldb, state,
+-					   state->domain_dn, "(&(objectClass=container)(cn=System))");
+-	if (!state->system_dn) {
+-		return NT_STATUS_NO_SUCH_DOMAIN;		
++	state->system_dn = samdb_system_container_dn(state->sam_ldb, state);
++	if (state->system_dn == NULL) {
++		return NT_STATUS_NO_MEMORY;
+ 	}
+ 
+ 	state->builtin_sid = dom_sid_parse_talloc(state, SID_BUILTIN);
+Index: source4/rpc_server/netlogon/dcerpc_netlogon.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source4/rpc_server/netlogon/dcerpc_netlogon.c b/source4/rpc_server/netlogon/dcerpc_netlogon.c
+--- a/source4/rpc_server/netlogon/dcerpc_netlogon.c	(revision 517339b17553eeaa0b95b44237899d381896de68)
++++ b/source4/rpc_server/netlogon/dcerpc_netlogon.c	(revision 0d6bc07a57252ea380e13df84bcb50e8ae23b3c9)
+@@ -3911,11 +3911,9 @@
+ 		return WERR_INVALID_FLAGS;
+ 	}
+ 
+-	system_dn = samdb_search_dn(sam_ctx, mem_ctx,
+-				    ldb_get_default_basedn(sam_ctx),
+-				    "(&(objectClass=container)(cn=System))");
+-	if (!system_dn) {
+-		return WERR_GEN_FAILURE;
++	system_dn = samdb_system_container_dn(sam_ctx, mem_ctx);
++	if (system_dn == NULL) {
++		return WERR_NOT_ENOUGH_MEMORY;
+ 	}
+ 
+ 	ret = gendb_search(sam_ctx, mem_ctx, system_dn,
+Index: source4/dsdb/common/util.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source4/dsdb/common/util.c b/source4/dsdb/common/util.c
+--- a/source4/dsdb/common/util.c	(revision 7112efed3d40b9220bf0d32e93d4de099565743e)
++++ b/source4/dsdb/common/util.c	(revision bac861ed27fb4dc49a6defa3e26f0ea29b6dda4f)
+@@ -1241,6 +1241,25 @@
+        return new_dn;
+ }
+ 
++struct ldb_dn *samdb_system_container_dn(struct ldb_context *sam_ctx, TALLOC_CTX *mem_ctx)
++{
++	struct ldb_dn *new_dn = NULL;
++	bool ok;
++
++	new_dn = ldb_dn_copy(mem_ctx, ldb_get_default_basedn(sam_ctx));
++	if (new_dn == NULL) {
++		return NULL;
++	}
++
++	ok = ldb_dn_add_child_fmt(new_dn, "CN=System");
++	if (!ok) {
++		TALLOC_FREE(new_dn);
++		return NULL;
++	}
++
++	return new_dn;
++}
++
+ struct ldb_dn *samdb_sites_dn(struct ldb_context *sam_ctx, TALLOC_CTX *mem_ctx)
+ {
+ 	struct ldb_dn *new_dn;
+Index: source4/dsdb/samdb/ldb_modules/samldb.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source4/dsdb/samdb/ldb_modules/samldb.c b/source4/dsdb/samdb/ldb_modules/samldb.c
+--- a/source4/dsdb/samdb/ldb_modules/samldb.c	(revision bac861ed27fb4dc49a6defa3e26f0ea29b6dda4f)
++++ b/source4/dsdb/samdb/ldb_modules/samldb.c	(revision d3c4dd68a0db924879d1f5c53fff7e511530fca2)
+@@ -5390,14 +5390,9 @@
+ 
+ 	/* Objects under CN=System */
+ 
+-	dn1 = ldb_dn_copy(ac, ldb_get_default_basedn(ldb));
++	dn1 = samdb_system_container_dn(ldb, ac);
+ 	if (dn1 == NULL) return ldb_oom(ldb);
+ 
+-	if ( ! ldb_dn_add_child_fmt(dn1, "CN=System")) {
+-		talloc_free(dn1);
+-		return LDB_ERR_OPERATIONS_ERROR;
+-	}
+-
+ 	if ((ldb_dn_compare_base(dn1, olddn) == 0) &&
+ 	    (ldb_dn_compare_base(dn1, newdn) != 0)) {
+ 		talloc_free(dn1);
+Index: source4/dsdb/samdb/ldb_modules/operational.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source4/dsdb/samdb/ldb_modules/operational.c b/source4/dsdb/samdb/ldb_modules/operational.c
+--- a/source4/dsdb/samdb/ldb_modules/operational.c	(revision d3c4dd68a0db924879d1f5c53fff7e511530fca2)
++++ b/source4/dsdb/samdb/ldb_modules/operational.c	(revision 30c14e87e2b66dd2ec4f09097394e5179c50411f)
+@@ -998,19 +998,20 @@
+ {
+ 	static const char * const attrs[] = { NULL };
+ 	int ret;
+-	struct ldb_dn *domain_dn = NULL;
+ 	struct ldb_dn *psc_dn = NULL;
+ 	struct ldb_result *res = NULL;
+ 	struct ldb_context *ldb = ldb_module_get_ctx(module);
++	bool psc_ok;
+ 
+ 	*pso_count = 0;
+-	domain_dn = ldb_get_default_basedn(ldb);
+-	psc_dn = ldb_dn_new_fmt(mem_ctx, ldb,
+-			        "CN=Password Settings Container,CN=System,%s",
+-				ldb_dn_get_linearized(domain_dn));
++	psc_dn = samdb_system_container_dn(ldb, mem_ctx);
+ 	if (psc_dn == NULL) {
+ 		return ldb_oom(ldb);
+ 	}
++	psc_ok = ldb_dn_add_child_fmt(psc_dn, "CN=Password Settings Container");
++	if (psc_ok == false) {
++		return ldb_oom(ldb);
++	}
+ 
+ 	/* get the number of PSO children */
+ 	ret = dsdb_module_search(module, mem_ctx, &res, psc_dn,
+@@ -1077,8 +1078,8 @@
+ 	int i;
+ 	struct ldb_context *ldb = ldb_module_get_ctx(module);
+ 	char *sid_filter = NULL;
+-	struct ldb_dn *domain_dn = NULL;
+ 	struct ldb_dn *psc_dn = NULL;
++	bool psc_ok;
+ 	const char *attrs[] = {
+ 		"msDS-PasswordSettingsPrecedence",
+ 		"objectGUID",
+@@ -1104,13 +1105,14 @@
+ 	}
+ 
+ 	/* only PSOs located in the Password Settings Container are valid */
+-	domain_dn = ldb_get_default_basedn(ldb);
+-	psc_dn = ldb_dn_new_fmt(mem_ctx, ldb,
+-			        "CN=Password Settings Container,CN=System,%s",
+-				ldb_dn_get_linearized(domain_dn));
++	psc_dn = samdb_system_container_dn(ldb, mem_ctx);
+ 	if (psc_dn == NULL) {
+ 		return ldb_oom(ldb);
+ 	}
++	psc_ok = ldb_dn_add_child_fmt(psc_dn, "CN=Password Settings Container");
++	if (psc_ok == false) {
++		return ldb_oom(ldb);
++	}
+ 
+ 	ret = dsdb_module_search(module, mem_ctx, result, psc_dn,
+ 				 LDB_SCOPE_ONELEVEL, attrs,
+Index: source4/dsdb/common/util_trusts.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source4/dsdb/common/util_trusts.c b/source4/dsdb/common/util_trusts.c
+--- a/source4/dsdb/common/util_trusts.c	(revision ecbba6aec277ba72e3ad0990c9ac6e0a291b0162)
++++ b/source4/dsdb/common/util_trusts.c	(revision dc74e3e94704ce4a28a0adb8102f71abb723fae1)
+@@ -2459,16 +2459,11 @@
+ 		return NT_STATUS_INVALID_PARAMETER_MIX;
+ 	}
+ 
+-	system_dn = ldb_dn_copy(frame, ldb_get_default_basedn(sam_ctx));
++	system_dn = samdb_system_container_dn(sam_ctx, frame);
+ 	if (system_dn == NULL) {
+ 		TALLOC_FREE(frame);
+ 		return NT_STATUS_NO_MEMORY;
+ 	}
+-
+-	if (!ldb_dn_add_child_fmt(system_dn, "CN=System")) {
+-		TALLOC_FREE(frame);
+-		return NT_STATUS_NO_MEMORY;
+-	}
+ 
+ 	if (netbios != NULL) {
+ 		netbios_encoded = ldb_binary_encode_string(frame, netbios);
+@@ -2617,16 +2612,11 @@
+ 		return NT_STATUS_NO_MEMORY;
+ 	}
+ 
+-	system_dn = ldb_dn_copy(frame, ldb_get_default_basedn(sam_ctx));
++	system_dn = samdb_system_container_dn(sam_ctx, frame);
+ 	if (system_dn == NULL) {
+ 		TALLOC_FREE(frame);
+ 		return NT_STATUS_NO_MEMORY;
+ 	}
+-
+-	if (!ldb_dn_add_child_fmt(system_dn, "CN=System")) {
+-		TALLOC_FREE(frame);
+-		return NT_STATUS_NO_MEMORY;
+-	}
+ 
+ 	filter = talloc_asprintf(frame,
+ 				"(&"
+@@ -2794,16 +2784,11 @@
+ 
+ 	*res = NULL;
+ 
+-	system_dn = ldb_dn_copy(frame, ldb_get_default_basedn(sam_ctx));
++	system_dn = samdb_system_container_dn(sam_ctx, frame);
+ 	if (system_dn == NULL) {
+ 		TALLOC_FREE(frame);
+ 		return NT_STATUS_NO_MEMORY;
+ 	}
+-
+-	if (!ldb_dn_add_child_fmt(system_dn, "CN=System")) {
+-		TALLOC_FREE(frame);
+-		return NT_STATUS_NO_MEMORY;
+-	}
+ 
+ 	if (exclude != NULL) {
+ 		exclude_encoded = ldb_binary_encode_string(frame, exclude);
+Index: source3/passdb/pdb_samba_dsdb.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source3/passdb/pdb_samba_dsdb.c b/source3/passdb/pdb_samba_dsdb.c
+--- a/source3/passdb/pdb_samba_dsdb.c	(revision dc74e3e94704ce4a28a0adb8102f71abb723fae1)
++++ b/source3/passdb/pdb_samba_dsdb.c	(revision 9313ebba32b650f31957a8ad6e2b36ac84fba0a3)
+@@ -3305,9 +3305,13 @@
+ 		goto out;
+ 	}
+ 
+-	msg->dn = ldb_dn_copy(tmp_ctx, base_dn);
++	msg->dn = samdb_system_container_dn(state->ldb, tmp_ctx);
++	if (msg->dn == NULL) {
++		status = NT_STATUS_NO_MEMORY;
++		goto out;
++	}
+ 
+-	ok = ldb_dn_add_child_fmt(msg->dn, "cn=%s,cn=System", td->domain_name);
++	ok = ldb_dn_add_child_fmt(msg->dn, "cn=%s", td->domain_name);
+ 	if (!ok) {
+ 		status = NT_STATUS_NO_MEMORY;
+ 		goto out;
+@@ -3532,13 +3536,13 @@
+ 		return NT_STATUS_OK;
+ 	}
+ 
+-	tdo_dn = ldb_dn_copy(tmp_ctx, ldb_get_default_basedn(state->ldb));
++	tdo_dn = samdb_system_container_dn(state->ldb, tmp_ctx);
+ 	if (tdo_dn == NULL) {
+ 		status = NT_STATUS_NO_MEMORY;
+ 		goto out;
+ 	}
+ 
+-	ok = ldb_dn_add_child_fmt(tdo_dn, "cn=%s,cn=System", domain);
++	ok = ldb_dn_add_child_fmt(tdo_dn, "cn=%s", domain);
+ 	if (!ok) {
+ 		TALLOC_FREE(tmp_ctx);
+ 		status = NT_STATUS_NO_MEMORY;
+Index: source3/utils/net_ads.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source3/utils/net_ads.c b/source3/utils/net_ads.c
+--- a/source3/utils/net_ads.c	(revision 9313ebba32b650f31957a8ad6e2b36ac84fba0a3)
++++ b/source3/utils/net_ads.c	(revision d94cbb10b882d52782cbabc1328c751cea4cb86f)
+@@ -713,10 +713,12 @@
+ 	} else if (ads->auth.realm == NULL) {
+ 		const char *c_realm = cli_credentials_get_realm(c->creds);
+ 
+-		ads->auth.realm = talloc_strdup(ads, c_realm);
+-		if (ads->auth.realm == NULL) {
+-			TALLOC_FREE(ads);
+-			return ADS_ERROR(LDAP_NO_MEMORY);
++		if (c_realm != NULL) {
++			ads->auth.realm = talloc_strdup(ads, c_realm);
++			if (ads->auth.realm == NULL) {
++				TALLOC_FREE(ads);
++				return ADS_ERROR(LDAP_NO_MEMORY);
++			}
+ 		}
+ 	}
+ 
+Index: selftest/target/Samba3.pm
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/selftest/target/Samba3.pm b/selftest/target/Samba3.pm
+--- a/selftest/target/Samba3.pm	(revision d94cbb10b882d52782cbabc1328c751cea4cb86f)
++++ b/selftest/target/Samba3.pm	(revision 9ace53099ed5cc9cb3cabe2f104882b0f260ea43)
+@@ -3023,6 +3023,11 @@
+ 	msdfs root = yes
+ 	msdfs shuffle referrals = yes
+ 	guest ok = yes
++[msdfs-share-wl]
++	path = $msdfs_shrdir
++	msdfs root = yes
++	wide links = yes
++	guest ok = yes
+ [msdfs-share2]
+ 	path = $msdfs_shrdir2
+ 	msdfs root = yes
+Index: source3/script/tests/test_bug15435_widelink_dfs.sh
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source3/script/tests/test_bug15435_widelink_dfs.sh b/source3/script/tests/test_bug15435_widelink_dfs.sh
+new file mode 100755
+--- /dev/null	(revision 98a53e95a0f36e60355e3e2d2719018cd485f436)
++++ b/source3/script/tests/test_bug15435_widelink_dfs.sh	(revision 98a53e95a0f36e60355e3e2d2719018cd485f436)
+@@ -0,0 +1,28 @@
++#!/bin/sh
++
++# regression test for dfs access with wide links enabled on dfs share
++
++if [ $# -lt 5 ]; then
++	cat <<EOF
++Usage: test_smbclient_basic.sh SERVER SERVER_IP DOMAIN USERNAME PASSWORD SMBCLIENT <smbclient arguments>
++EOF
++	exit 1
++fi
++
++SERVER="$1"
++SERVER_IP="$2"
++USERNAME="$3"
++PASSWORD="$4"
++smbclient="$5"
++CONFIGURATION="$6"
++shift 6
++ADDARGS="$@"
++
++incdir=$(dirname $0)/../../../testprogs/blackbox
++. $incdir/subunit.sh
++. $incdir/common_test_fns.inc
++
++# TEST
++test_smbclient "smbclient as $DOMAIN\\$USERNAME" 'ls' "//$SERVER/msdfs-share-wl" -U$DOMAIN\\$USERNAME%$PASSWORD $ADDARGS -c 'cd msdfs-src1' || failed=$(expr $failed + 1)
++
++exit $failed
+Index: source3/selftest/tests.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source3/selftest/tests.py b/source3/selftest/tests.py
+--- a/source3/selftest/tests.py	(revision 9ace53099ed5cc9cb3cabe2f104882b0f260ea43)
++++ b/source3/selftest/tests.py	(revision 98a53e95a0f36e60355e3e2d2719018cd485f436)
+@@ -1515,6 +1515,16 @@
+      "",
+      "-b $PREFIX/clusteredmember/unclists/tmp.txt -N 5 -o 10"])
+ 
++plantestsuite("samba3.blackbox.smbclient-bug15435",
++              "fileserver",
++              [os.path.join(samba3srcdir, "script/tests/test_bug15435_widelink_dfs.sh"),
++               "$SERVER",
++               "$SERVER_IP",
++               "$USERNAME",
++               "$PASSWORD",
++               smbclient3,
++               configuration])
++
+ plantestsuite(
+     "samba3.net_machine_account",
+     "clusteredmember",
+Index: source3/modules/vfs_widelinks.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source3/modules/vfs_widelinks.c b/source3/modules/vfs_widelinks.c
+--- a/source3/modules/vfs_widelinks.c	(revision 98a53e95a0f36e60355e3e2d2719018cd485f436)
++++ b/source3/modules/vfs_widelinks.c	(revision 10f3fafc6f4fedbc182894c3d03fd2939cfcee18)
+@@ -106,6 +106,7 @@
+ 
+ struct widelinks_config {
+ 	bool active;
++	bool is_dfs_share;
+ 	char *cwd;
+ };
+ 
+@@ -134,7 +135,8 @@
+ 		DBG_ERR("vfs_widelinks module loaded with "
+ 			"widelinks = no\n");
+ 	}
+-
++	config->is_dfs_share =
++		(lp_host_msdfs() && lp_msdfs_root(SNUM(handle->conn)));
+         SMB_VFS_HANDLE_SET_DATA(handle,
+ 				config,
+ 				NULL, /* free_fn */
+@@ -346,7 +348,7 @@
+ {
+ 	struct vfs_open_how how = *_how;
+ 	struct widelinks_config *config = NULL;
+-
++	int ret;
+ 	SMB_VFS_HANDLE_GET_DATA(handle,
+ 				config,
+ 				struct widelinks_config,
+@@ -363,11 +365,33 @@
+ 		how.flags = (how.flags & ~O_NOFOLLOW);
+ 	}
+ 
+-	return SMB_VFS_NEXT_OPENAT(handle,
++	ret = SMB_VFS_NEXT_OPENAT(handle,
+ 				   dirfsp,
+ 				   smb_fname,
+ 				   fsp,
+ 				   &how);
++	if (config->is_dfs_share && ret == -1 && errno == ENOENT) {
++		struct smb_filename *full_fname = NULL;
++		int lstat_ret;
++
++		full_fname = full_path_from_dirfsp_atname(talloc_tos(),
++				dirfsp,
++				smb_fname);
++		if (full_fname == NULL) {
++			errno = ENOMEM;
++			return -1;
++		}
++		lstat_ret = SMB_VFS_NEXT_LSTAT(handle,
++				full_fname);
++		if (lstat_ret != -1 &&
++		    VALID_STAT(full_fname->st) &&
++		    S_ISLNK(full_fname->st.st_ex_mode)) {
++			fsp->fsp_name->st = full_fname->st;
++		}
++		TALLOC_FREE(full_fname);
++		errno = ENOENT;
++	}
++	return ret;
+ }
+ 
+ static struct dirent *widelinks_readdir(vfs_handle_struct *handle,
+Index: source3/modules/vfs_aio_pthread.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source3/modules/vfs_aio_pthread.c b/source3/modules/vfs_aio_pthread.c
+--- a/source3/modules/vfs_aio_pthread.c	(revision 10f3fafc6f4fedbc182894c3d03fd2939cfcee18)
++++ b/source3/modules/vfs_aio_pthread.c	(revision f99fec49e25a1e54667286415c1a016c2116f42c)
+@@ -468,7 +468,15 @@
+ 		return -1;
+ 	}
+ 
+-	if (fsp->conn->sconn->client->server_multi_channel_enabled) {
++	if (fsp->conn->sconn->pool == NULL) {
++		/*
++		 * a threadpool is required for async support
++		 */
++		aio_allow_open = false;
++	}
++
++	if (fsp->conn->sconn->client != NULL &&
++	    fsp->conn->sconn->client->server_multi_channel_enabled) {
+ 		/*
+ 		 * This module is not compatible with multi channel yet.
+ 		 */
+Index: source4/torture/ndr/dcerpc.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source4/torture/ndr/dcerpc.c b/source4/torture/ndr/dcerpc.c
+new file mode 100644
+--- /dev/null	(revision 95bb8115a370e7d33222d1cb94959e69eae5d1d5)
++++ b/source4/torture/ndr/dcerpc.c	(revision 95bb8115a370e7d33222d1cb94959e69eae5d1d5)
+@@ -0,0 +1,148 @@
++/*
++   Unix SMB/CIFS implementation.
++   test suite for dcerpc ndr operations
++
++   Copyright (C) Stefan Metzmacher 2023
++
++   This program is free software; you can redistribute it and/or modify
++   it under the terms of the GNU General Public License as published by
++   the Free Software Foundation; either version 3 of the License, or
++   (at your option) any later version.
++
++   This program is distributed in the hope that it will be useful,
++   but WITHOUT ANY WARRANTY; without even the implied warranty of
++   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++   GNU General Public License for more details.
++
++   You should have received a copy of the GNU General Public License
++   along with this program.  If not, see <http://www.gnu.org/licenses/>.
++*/
++
++#include "includes.h"
++#include "torture/ndr/ndr.h"
++#include "librpc/gen_ndr/ndr_dcerpc.h"
++#include "torture/ndr/proto.h"
++
++/*
++ *  ncacn_packet: struct ncacn_packet
++ *      rpc_vers                 : 0x05 (5)
++ *      rpc_vers_minor           : 0x00 (0)
++ *      ptype                    : DCERPC_PKT_CO_CANCEL (18)
++ *      pfc_flags                : 0x06 (6)
++ *             0: DCERPC_PFC_FLAG_FIRST
++ *             1: DCERPC_PFC_FLAG_LAST
++ *             1: DCERPC_PFC_FLAG_PENDING_CANCEL_OR_HDR_SIGNING
++ *             0: DCERPC_PFC_FLAG_CONC_MPX
++ *             0: DCERPC_PFC_FLAG_DID_NOT_EXECUTE
++ *             0: DCERPC_PFC_FLAG_MAYBE
++ *             0: DCERPC_PFC_FLAG_OBJECT_UUID
++ *      drep: ARRAY(4)
++ *          [0]                      : 0x10 (16)
++ *          [1]                      : 0x00 (0)
++ *          [2]                      : 0x00 (0)
++ *          [3]                      : 0x00 (0)
++ *      frag_length              : 0x0010 (16)
++ *      auth_length              : 0x0000 (0)
++ *      call_id                  : 0x00000001 (1)
++ *      u                        : union dcerpc_payload(case 18)
++ *      co_cancel: struct dcerpc_co_cancel
++ *          auth_info                : DATA_BLOB length=0
++ */
++static const uint8_t ncacn_packet_co_cancel_data[] = {
++	0x05, 0x00, 0x12, 0x06, 0x10, 0x00, 0x00, 0x00,
++	0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
++};
++
++static bool ncacn_packet_co_cancel_check(struct torture_context *tctx,
++					 struct ncacn_packet *pkt)
++{
++	torture_assert_int_equal(tctx, pkt->rpc_vers, 5, "rpc_vers");
++	torture_assert_int_equal(tctx, pkt->rpc_vers_minor, 0, "rpc_vers_minor");
++	torture_assert_int_equal(tctx, pkt->ptype, DCERPC_PKT_CO_CANCEL, "ptype");
++	torture_assert_int_equal(tctx, pkt->pfc_flags,
++				 DCERPC_PFC_FLAG_LAST |
++				 DCERPC_PFC_FLAG_PENDING_CANCEL_OR_HDR_SIGNING,
++				 "pfc_flags");
++	torture_assert_int_equal(tctx, pkt->drep[0], DCERPC_DREP_LE, "drep[0]");
++	torture_assert_int_equal(tctx, pkt->drep[1], 0, "drep[1]");
++	torture_assert_int_equal(tctx, pkt->drep[2], 0, "drep[2]");
++	torture_assert_int_equal(tctx, pkt->drep[3], 0, "drep[3]");
++	torture_assert_int_equal(tctx, pkt->frag_length, 16, "frag_length");
++	torture_assert_int_equal(tctx, pkt->auth_length, 0, "auth_length");
++	torture_assert_int_equal(tctx, pkt->call_id, 1, "call_id");
++	torture_assert_int_equal(tctx, pkt->u.co_cancel.auth_info.length, 0,
++				 "co_cancel.auth_info.length");
++	return true;
++}
++
++/*
++ *  ncacn_packet: struct ncacn_packet
++ *      rpc_vers                 : 0x05 (5)
++ *      rpc_vers_minor           : 0x00 (0)
++ *      ptype                    : DCERPC_PKT_ORPHANED (19)
++ *      pfc_flags                : 0x03 (3)
++ *             1: DCERPC_PFC_FLAG_FIRST
++ *             1: DCERPC_PFC_FLAG_LAST
++ *             0: DCERPC_PFC_FLAG_PENDING_CANCEL_OR_HDR_SIGNING
++ *             0: DCERPC_PFC_FLAG_CONC_MPX
++ *             0: DCERPC_PFC_FLAG_DID_NOT_EXECUTE
++ *             0: DCERPC_PFC_FLAG_MAYBE
++ *             0: DCERPC_PFC_FLAG_OBJECT_UUID
++ *      drep: ARRAY(4)
++ *          [0]                      : 0x10 (16)
++ *          [1]                      : 0x00 (0)
++ *          [2]                      : 0x00 (0)
++ *          [3]                      : 0x00 (0)
++ *      frag_length              : 0x0010 (16)
++ *      auth_length              : 0x0000 (0)
++ *      call_id                  : 0x00000008 (8)
++ *      u                        : union dcerpc_payload(case 19)
++ *      orphaned: struct dcerpc_orphaned
++ *          auth_info                : DATA_BLOB length=0
++ */
++static const uint8_t ncacn_packet_orphaned_data[] = {
++	0x05, 0x00, 0x13, 0x03, 0x10, 0x00, 0x00, 0x00,
++	0x10, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00,
++};
++
++static bool ncacn_packet_orphaned_check(struct torture_context *tctx,
++					struct ncacn_packet *pkt)
++{
++	torture_assert_int_equal(tctx, pkt->rpc_vers, 5, "rpc_vers");
++	torture_assert_int_equal(tctx, pkt->rpc_vers_minor, 0, "rpc_vers_minor");
++	torture_assert_int_equal(tctx, pkt->ptype, DCERPC_PKT_ORPHANED, "ptype");
++	torture_assert_int_equal(tctx, pkt->pfc_flags,
++				 DCERPC_PFC_FLAG_FIRST|DCERPC_PFC_FLAG_LAST,
++				 "pfc_flags");
++	torture_assert_int_equal(tctx, pkt->drep[0], DCERPC_DREP_LE, "drep[0]");
++	torture_assert_int_equal(tctx, pkt->drep[1], 0, "drep[1]");
++	torture_assert_int_equal(tctx, pkt->drep[2], 0, "drep[2]");
++	torture_assert_int_equal(tctx, pkt->drep[3], 0, "drep[3]");
++	torture_assert_int_equal(tctx, pkt->frag_length, 16, "frag_length");
++	torture_assert_int_equal(tctx, pkt->auth_length, 0, "auth_length");
++	torture_assert_int_equal(tctx, pkt->call_id, 8, "call_id");
++	torture_assert_int_equal(tctx, pkt->u.orphaned.auth_info.length, 0,
++				 "orphaned.auth_info.length");
++	return true;
++}
++
++struct torture_suite *ndr_dcerpc_suite(TALLOC_CTX *ctx)
++{
++	struct torture_suite *suite = torture_suite_create(ctx, "dcerpc");
++	struct torture_suite *co_cancel = torture_suite_create(ctx, "co_cancel");
++	struct torture_suite *orphaned = torture_suite_create(ctx, "orphaned");
++
++	torture_suite_add_suite(suite, co_cancel);
++	torture_suite_add_ndr_pull_validate_test(co_cancel,
++					ncacn_packet,
++					ncacn_packet_co_cancel_data,
++					ncacn_packet_co_cancel_check);
++
++	torture_suite_add_suite(suite, orphaned);
++	torture_suite_add_ndr_pull_validate_test(orphaned,
++					ncacn_packet,
++					ncacn_packet_orphaned_data,
++					ncacn_packet_orphaned_check);
++
++	return suite;
++}
+Index: source4/torture/ndr/ndr.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source4/torture/ndr/ndr.c b/source4/torture/ndr/ndr.c
+--- a/source4/torture/ndr/ndr.c	(revision f99fec49e25a1e54667286415c1a016c2116f42c)
++++ b/source4/torture/ndr/ndr.c	(revision 95bb8115a370e7d33222d1cb94959e69eae5d1d5)
+@@ -759,6 +759,7 @@
+ {
+ 	struct torture_suite *suite = torture_suite_create(mem_ctx, "ndr");
+ 
++	torture_suite_add_suite(suite, ndr_dcerpc_suite(suite));
+ 	torture_suite_add_suite(suite, ndr_winreg_suite(suite));
+ 	torture_suite_add_suite(suite, ndr_atsvc_suite(suite));
+ 	torture_suite_add_suite(suite, ndr_lsa_suite(suite));
+Index: source4/torture/wscript_build
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source4/torture/wscript_build b/source4/torture/wscript_build
+--- a/source4/torture/wscript_build	(revision f99fec49e25a1e54667286415c1a016c2116f42c)
++++ b/source4/torture/wscript_build	(revision ef5808a8692a068a0fef27413fe3dcc4ce9019f9)
+@@ -47,6 +47,7 @@
+ 
+ bld.SAMBA_SUBSYSTEM('TORTURE_NDR',
+         source='''ndr/ndr.c
++                  ndr/dcerpc.c
+                   ndr/winreg.c
+                   ndr/atsvc.c
+                   ndr/lsa.c
+@@ -97,6 +98,7 @@
+                         rpc/drsuapi_w2k8.c
+                         rpc/drsuapi_cracknames.c
+                         rpc/dsgetinfo.c
++                        rpc/rawpipe.c
+                         rpc/spoolss.c
+                         rpc/spoolss_win.c
+                         rpc/spoolss_access.c
+@@ -192,6 +194,7 @@
+                       printer_driver
+                       RPC_NDR_MDSSVC
+                       mdssvc
++                      tstream_binding_handle
+                       ''' % samba_net + ntvfs_specific['deps'],
+                  internal_module=True,
+                  enabled=bld.PYTHON_BUILD_IS_ENABLED())
+Index: librpc/rpc/dcerpc_util.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/librpc/rpc/dcerpc_util.c b/librpc/rpc/dcerpc_util.c
+--- a/librpc/rpc/dcerpc_util.c	(revision 95bb8115a370e7d33222d1cb94959e69eae5d1d5)
++++ b/librpc/rpc/dcerpc_util.c	(revision 4233de9bd485f45dc44b19fc6fd7221c6bb9e2e0)
+@@ -565,9 +565,14 @@
+ 
+ 		ofs = state->buffer.length;
+ 
+-		if (frag_len < ofs) {
++		if (frag_len <= ofs) {
+ 			/*
+-			 * something is wrong, let the caller deal with it
++			 * With frag_len == ofs, we are done, this is likely
++			 * a DCERPC_PKT_CO_CANCEL and DCERPC_PKT_ORPHANED
++			 * without any payload.
++			 *
++			 * Otherwise it's a broken packet and we
++			 * let the caller deal with it.
+ 			 */
+ 			*_vector = NULL;
+ 			*_count = 0;
+Index: librpc/idl/dcerpc.idl
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/librpc/idl/dcerpc.idl b/librpc/idl/dcerpc.idl
+--- a/librpc/idl/dcerpc.idl	(revision 4233de9bd485f45dc44b19fc6fd7221c6bb9e2e0)
++++ b/librpc/idl/dcerpc.idl	(revision 3a0ae0c6f0195eead91cc20d27ed227c63c7441e)
+@@ -276,12 +276,10 @@
+ 	} dcerpc_auth3;
+ 
+ 	typedef [public] struct {
+-		[value(0)]	      uint32    _pad;
+ 		[flag(NDR_REMAINING)] DATA_BLOB auth_info;
+ 	} dcerpc_orphaned;
+ 
+ 	typedef [public] struct {
+-		[value(0)]	      uint32    _pad;
+ 		[flag(NDR_REMAINING)] DATA_BLOB auth_info;
+ 	} dcerpc_co_cancel;
+ 
+Index: source3/smbd/smb2_reply.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source3/smbd/smb2_reply.c b/source3/smbd/smb2_reply.c
+--- a/source3/smbd/smb2_reply.c	(revision 3a0ae0c6f0195eead91cc20d27ed227c63c7441e)
++++ b/source3/smbd/smb2_reply.c	(revision ac25afd6ebdc911e52719fc705a3dc57dd072a96)
+@@ -335,6 +335,7 @@
+ 		char *share = NULL;
+ 		char *remaining_path = NULL;
+ 		char path_sep = 0;
++		char *p = NULL;
+ 
+ 		if (posix_pathnames && (dst[0] == '/')) {
+ 			path_sep = dst[0];
+@@ -386,6 +387,16 @@
+ 			goto local_path;
+ 		}
+ 		/*
++		 * Ensure the server name does not contain
++		 * any possible path components by converting
++		 * them to _'s.
++		 */
++		for (p = server + 1; p < share; p++) {
++			if (*p == '/' || *p == '\\') {
++				*p = '_';
++			}
++		}
++		/*
+ 		 * It's a well formed DFS path with
+ 		 * at least server and share components.
+ 		 * Replace the slashes with '/' and
+@@ -400,12 +411,32 @@
+ 		remaining_path = strchr(share+1, path_sep);
+ 		if (remaining_path == NULL) {
+ 			/*
++			 * Ensure the share name does not contain
++			 * any possible path components by converting
++			 * them to _'s.
++			 */
++			for (p = share + 1; *p; p++) {
++				if (*p == '/' || *p == '\\') {
++					*p = '_';
++				}
++			}
++			/*
+ 			 * If no remaining path this was
+ 			 * a bare /server/share path. Just return.
+ 			 */
+ 			*err = NT_STATUS_OK;
+ 			return ret;
+ 		}
++		/*
++		 * Ensure the share name does not contain
++		 * any possible path components by converting
++		 * them to _'s.
++		 */
++		for (p = share + 1; p < remaining_path; p++) {
++			if (*p == '/' || *p == '\\') {
++				*p = '_';
++			}
++		}
+ 		*remaining_path = '/';
+ 		dst = remaining_path + 1;
+ 		/* dst now points at any following components. */
+@@ -524,46 +555,6 @@
+ 				  bufrem, flags);
+ }
+ 
+-/****************************************************************************
+- Check if we have a correct fsp pointing to a file. Basic check for open fsp.
+-****************************************************************************/
+-
+-bool check_fsp_open(connection_struct *conn, struct smb_request *req,
+-		    files_struct *fsp)
+-{
+-	if ((fsp == NULL) || (conn == NULL)) {
+-		reply_nterror(req, NT_STATUS_INVALID_HANDLE);
+-		return False;
+-	}
+-	if ((conn != fsp->conn) || (req->vuid != fsp->vuid)) {
+-		reply_nterror(req, NT_STATUS_INVALID_HANDLE);
+-		return False;
+-	}
+-	return True;
+-}
+-
+-/****************************************************************************
+- Check if we have a correct fsp pointing to a file.
+-****************************************************************************/
+-
+-bool check_fsp(connection_struct *conn, struct smb_request *req,
+-	       files_struct *fsp)
+-{
+-	if (!check_fsp_open(conn, req, fsp)) {
+-		return False;
+-	}
+-	if (fsp->fsp_flags.is_directory) {
+-		reply_nterror(req, NT_STATUS_INVALID_DEVICE_REQUEST);
+-		return False;
+-	}
+-	if (fsp_get_pathref_fd(fsp) == -1) {
+-		reply_nterror(req, NT_STATUS_ACCESS_DENIED);
+-		return False;
+-	}
+-	fsp->num_smb_operations++;
+-	return True;
+-}
+-
+ /****************************************************************************
+  Check if we have a correct fsp pointing to a quota fake file. Replacement for
+  the CHECK_NTQUOTA_HANDLE_OK macro.
+@@ -572,7 +563,11 @@
+ bool check_fsp_ntquota_handle(connection_struct *conn, struct smb_request *req,
+ 			      files_struct *fsp)
+ {
+-	if (!check_fsp_open(conn, req, fsp)) {
++	if ((fsp == NULL) || (conn == NULL)) {
++		return false;
++	}
++
++	if ((conn != fsp->conn) || (req->vuid != fsp->vuid)) {
+ 		return false;
+ 	}
+ 
+Index: libcli/smb/smbXcli_base.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/libcli/smb/smbXcli_base.c b/libcli/smb/smbXcli_base.c
+--- a/libcli/smb/smbXcli_base.c	(revision fec913830f5e03c221ad08011f79a0ae8eb1eddf)
++++ b/libcli/smb/smbXcli_base.c	(revision d167b80dc729f8c8caf7052a3494433f9764b72c)
+@@ -4220,6 +4220,8 @@
+ struct smbXcli_negprot_state {
+ 	struct smbXcli_conn *conn;
+ 	struct tevent_context *ev;
++	struct smb2_negotiate_contexts *in_ctx;
++	struct smb2_negotiate_contexts *out_ctx;
+ 	uint32_t timeout_msec;
+ 
+ 	struct {
+@@ -4242,7 +4244,8 @@
+ 					uint32_t timeout_msec,
+ 					enum protocol_types min_protocol,
+ 					enum protocol_types max_protocol,
+-					uint16_t max_credits)
++					uint16_t max_credits,
++					struct smb2_negotiate_contexts *in_ctx)
+ {
+ 	struct tevent_req *req, *subreq;
+ 	struct smbXcli_negprot_state *state;
+@@ -4254,6 +4257,7 @@
+ 	}
+ 	state->conn = conn;
+ 	state->ev = ev;
++	state->in_ctx = in_ctx;
+ 	state->timeout_msec = timeout_msec;
+ 
+ 	if (min_protocol == PROTOCOL_NONE) {
+@@ -4933,6 +4937,25 @@
+ 		if (!NT_STATUS_IS_OK(status)) {
+ 			return NULL;
+ 		}
++
++		if (state->in_ctx != NULL) {
++			struct smb2_negotiate_contexts *ctxs = state->in_ctx;
++
++			for (i=0; i<ctxs->num_contexts; i++) {
++				struct smb2_negotiate_context *ctx =
++					&ctxs->contexts[i];
++
++				status = smb2_negotiate_context_add(
++					state,
++					&c,
++					ctx->type,
++					ctx->data.data,
++					ctx->data.length);
++				if (!NT_STATUS_IS_OK(status)) {
++					return NULL;
++				}
++			}
++		}
+ 
+ 		status = smb2_negotiate_context_push(state, &b, c);
+ 		if (!NT_STATUS_IS_OK(status)) {
+@@ -4988,7 +5011,6 @@
+ 	uint8_t *body;
+ 	size_t i;
+ 	uint16_t dialect_revision;
+-	struct smb2_negotiate_contexts c = { .num_contexts = 0, };
+ 	uint32_t negotiate_context_offset = 0;
+ 	uint16_t negotiate_context_count = 0;
+ 	DATA_BLOB negotiate_context_blob = data_blob_null;
+@@ -5195,10 +5217,15 @@
+ 	negotiate_context_blob.data += ctx_ofs;
+ 	negotiate_context_blob.length -= ctx_ofs;
+ 
+-	status = smb2_negotiate_context_parse(state,
++	state->out_ctx = talloc_zero(state, struct smb2_negotiate_contexts);
++	if (tevent_req_nomem(state->out_ctx, req)) {
++		return;
++	}
++
++	status = smb2_negotiate_context_parse(state->out_ctx,
+ 					      negotiate_context_blob,
+ 					      negotiate_context_count,
+-					      &c);
++					      state->out_ctx);
+ 	if (NT_STATUS_EQUAL(status, NT_STATUS_INVALID_PARAMETER)) {
+ 		status = NT_STATUS_INVALID_NETWORK_RESPONSE;
+ 	}
+@@ -5206,8 +5233,8 @@
+ 		return;
+ 	}
+ 
+-	preauth = smb2_negotiate_context_find(&c,
+-					SMB2_PREAUTH_INTEGRITY_CAPABILITIES);
++	preauth = smb2_negotiate_context_find(
++		state->out_ctx, SMB2_PREAUTH_INTEGRITY_CAPABILITIES);
+ 	if (preauth == NULL) {
+ 		tevent_req_nterror(req, NT_STATUS_INVALID_NETWORK_RESPONSE);
+ 		return;
+@@ -5237,7 +5264,8 @@
+ 		return;
+ 	}
+ 
+-	sign_algo = smb2_negotiate_context_find(&c, SMB2_SIGNING_CAPABILITIES);
++	sign_algo = smb2_negotiate_context_find(
++		state->out_ctx, SMB2_SIGNING_CAPABILITIES);
+ 	if (sign_algo != NULL) {
+ 		const struct smb3_signing_capabilities *client_sign_algos =
+ 			&state->conn->smb2.client.smb3_capabilities.signing;
+@@ -5296,7 +5324,8 @@
+ 		conn->smb2.server.sign_algo = sign_algo_selected;
+ 	}
+ 
+-	cipher = smb2_negotiate_context_find(&c, SMB2_ENCRYPTION_CAPABILITIES);
++	cipher = smb2_negotiate_context_find(
++		state->out_ctx, SMB2_ENCRYPTION_CAPABILITIES);
+ 	if (cipher != NULL) {
+ 		const struct smb3_encryption_capabilities *client_ciphers =
+ 			&state->conn->smb2.client.smb3_capabilities.encryption;
+@@ -5516,9 +5545,26 @@
+ 	return NT_STATUS_INVALID_NETWORK_RESPONSE;
+ }
+ 
+-NTSTATUS smbXcli_negprot_recv(struct tevent_req *req)
++NTSTATUS smbXcli_negprot_recv(
++	struct tevent_req *req,
++	TALLOC_CTX *mem_ctx,
++	struct smb2_negotiate_contexts **out_ctx)
+ {
+-	return tevent_req_simple_recv_ntstatus(req);
++	struct smbXcli_negprot_state *state = tevent_req_data(
++		req, struct smbXcli_negprot_state);
++	NTSTATUS status;
++
++	if (tevent_req_is_nterror(req, &status)) {
++		tevent_req_received(req);
++		return status;
++	}
++
++	if (out_ctx != NULL) {
++		*out_ctx = talloc_move(mem_ctx, &state->out_ctx);
++	}
++
++	tevent_req_received(req);
++	return NT_STATUS_OK;
+ }
+ 
+ NTSTATUS smbXcli_negprot(struct smbXcli_conn *conn,
+@@ -5543,9 +5589,15 @@
+ 	if (ev == NULL) {
+ 		goto fail;
+ 	}
+-	req = smbXcli_negprot_send(frame, ev, conn, timeout_msec,
+-				   min_protocol, max_protocol,
+-				   WINDOWS_CLIENT_PURE_SMB2_NEGPROT_INITIAL_CREDIT_ASK);
++	req = smbXcli_negprot_send(
++		frame,
++		ev,
++		conn,
++		timeout_msec,
++		min_protocol,
++		max_protocol,
++		WINDOWS_CLIENT_PURE_SMB2_NEGPROT_INITIAL_CREDIT_ASK,
++		NULL);
+ 	if (req == NULL) {
+ 		goto fail;
+ 	}
+@@ -5553,7 +5605,7 @@
+ 	if (!ok) {
+ 		goto fail;
+ 	}
+-	status = smbXcli_negprot_recv(req);
++	status = smbXcli_negprot_recv(req, NULL, NULL);
+  fail:
+ 	TALLOC_FREE(frame);
+ 	return status;
+Index: libcli/smb/smbXcli_base.h
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/libcli/smb/smbXcli_base.h b/libcli/smb/smbXcli_base.h
+--- a/libcli/smb/smbXcli_base.h	(revision fec913830f5e03c221ad08011f79a0ae8eb1eddf)
++++ b/libcli/smb/smbXcli_base.h	(revision ca885d59174724bd045c4fcfab98d8bf3337ca68)
+@@ -457,14 +457,19 @@
+ NTSTATUS smb2cli_req_get_sent_iov(struct tevent_req *req,
+ 				  struct iovec *sent_iov);
+ 
++struct smb2_negotiate_contexts;
+ struct tevent_req *smbXcli_negprot_send(TALLOC_CTX *mem_ctx,
+ 					struct tevent_context *ev,
+ 					struct smbXcli_conn *conn,
+ 					uint32_t timeout_msec,
+ 					enum protocol_types min_protocol,
+ 					enum protocol_types max_protocol,
+-					uint16_t max_credits);
+-NTSTATUS smbXcli_negprot_recv(struct tevent_req *req);
++					uint16_t max_credits,
++					struct smb2_negotiate_contexts *in_ctx);
++NTSTATUS smbXcli_negprot_recv(
++	struct tevent_req *req,
++	TALLOC_CTX *mem_ctx,
++	struct smb2_negotiate_contexts **out_ctx);
+ NTSTATUS smbXcli_negprot(struct smbXcli_conn *conn,
+ 			 uint32_t timeout_msec,
+ 			 enum protocol_types min_protocol,
+@@ -928,4 +933,40 @@
+ NTSTATUS smb2cli_echo(struct smbXcli_conn *conn,
+ 		      uint32_t timeout_msec);
+ 
++struct tevent_req *smb2cli_ioctl_pipe_wait_send(TALLOC_CTX *mem_ctx,
++						struct tevent_context *ev,
++						struct smbXcli_conn *conn,
++						uint32_t timeout_msec,
++						struct smbXcli_session *session,
++						struct smbXcli_tcon *tcon,
++						const char *pipe_name,
++						uint64_t pipe_wait_timeout);
++
++NTSTATUS smb2cli_ioctl_pipe_wait_recv(struct tevent_req *req);
++
++NTSTATUS smb2cli_ioctl_pipe_wait(struct smbXcli_conn *conn,
++				 uint32_t timeout_msec,
++				 struct smbXcli_session *session,
++				 struct smbXcli_tcon *tcon,
++				 const char *pipe_name,
++				 uint64_t pipe_wait_timeout);
++
++struct tevent_req *smb1cli_ioctl_pipe_wait_send(TALLOC_CTX *mem_ctx,
++					  struct tevent_context *ev,
++					  struct smbXcli_conn *conn,
++					  uint32_t timeout_msec,
++					  uint32_t pid,
++					  struct smbXcli_session *session,
++					  struct smbXcli_tcon *tcon,
++					  const char *pipe_name);
++
++NTSTATUS smb1cli_ioctl_pipe_wait_recv(struct tevent_req *req);
++
++NTSTATUS smb1cli_ioctl_pipe_wait(struct smbXcli_conn *conn,
++				 uint32_t timeout_msec,
++				 uint32_t pid,
++				 struct smbXcli_session *session,
++				 struct smbXcli_tcon *tcon,
++				 const char *pipe_name,
++				 uint64_t pipe_wait_timeout);
+ #endif /* _SMBXCLI_BASE_H_ */
+Index: source3/libsmb/cliconnect.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source3/libsmb/cliconnect.c b/source3/libsmb/cliconnect.c
+--- a/source3/libsmb/cliconnect.c	(revision fec913830f5e03c221ad08011f79a0ae8eb1eddf)
++++ b/source3/libsmb/cliconnect.c	(revision d167b80dc729f8c8caf7052a3494433f9764b72c)
+@@ -2850,11 +2850,15 @@
+ 		return;
+ 	}
+ 
+-	subreq = smbXcli_negprot_send(state, state->ev, state->cli->conn,
+-				      state->cli->timeout,
+-				      state->min_protocol,
+-				      state->max_protocol,
+-				      WINDOWS_CLIENT_PURE_SMB2_NEGPROT_INITIAL_CREDIT_ASK);
++	subreq = smbXcli_negprot_send(
++		state,
++		state->ev,
++		state->cli->conn,
++		state->cli->timeout,
++		state->min_protocol,
++		state->max_protocol,
++		WINDOWS_CLIENT_PURE_SMB2_NEGPROT_INITIAL_CREDIT_ASK,
++		NULL);
+ 	if (tevent_req_nomem(subreq, req)) {
+ 		return;
+ 	}
+@@ -2869,7 +2873,7 @@
+ 		req, struct cli_start_connection_state);
+ 	NTSTATUS status;
+ 
+-	status = smbXcli_negprot_recv(subreq);
++	status = smbXcli_negprot_recv(subreq, NULL, NULL);
+ 	TALLOC_FREE(subreq);
+ 	if (tevent_req_nterror(req, status)) {
+ 		return;
+Index: source3/torture/torture.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source3/torture/torture.c b/source3/torture/torture.c
+--- a/source3/torture/torture.c	(revision fec913830f5e03c221ad08011f79a0ae8eb1eddf)
++++ b/source3/torture/torture.c	(revision d167b80dc729f8c8caf7052a3494433f9764b72c)
+@@ -3953,8 +3953,15 @@
+ 	for (i=0;i<50000;i++) {
+ 		struct tevent_req *req;
+ 
+-		req = smbXcli_negprot_send(ev, ev, cli->conn, cli->timeout,
+-					   PROTOCOL_CORE, PROTOCOL_NT1, 0);
++		req = smbXcli_negprot_send(
++			ev,
++			ev,
++			cli->conn,
++			cli->timeout,
++			PROTOCOL_CORE,
++			PROTOCOL_NT1,
++			0,
++			NULL);
+ 		if (req == NULL) {
+ 			TALLOC_FREE(ev);
+ 			return false;
+Index: source4/libcli/raw/rawnegotiate.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source4/libcli/raw/rawnegotiate.c b/source4/libcli/raw/rawnegotiate.c
+--- a/source4/libcli/raw/rawnegotiate.c	(revision fec913830f5e03c221ad08011f79a0ae8eb1eddf)
++++ b/source4/libcli/raw/rawnegotiate.c	(revision d167b80dc729f8c8caf7052a3494433f9764b72c)
+@@ -106,7 +106,8 @@
+ 				      timeout_msec,
+ 				      minprotocol,
+ 				      maxprotocol,
+-				      transport->options.max_credits);
++				      transport->options.max_credits,
++				      NULL);
+ 	if (tevent_req_nomem(subreq, req)) {
+ 		return tevent_req_post(req, ev);
+ 	}
+@@ -125,7 +126,7 @@
+ 		struct smb_raw_negotiate_state);
+ 	NTSTATUS status;
+ 
+-	status = smbXcli_negprot_recv(subreq);
++	status = smbXcli_negprot_recv(subreq, NULL, NULL);
+ 	TALLOC_FREE(subreq);
+ 	if (tevent_req_nterror(req, status)) {
+ 		return;
+Index: source4/libcli/smb2/connect.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source4/libcli/smb2/connect.c b/source4/libcli/smb2/connect.c
+--- a/source4/libcli/smb2/connect.c	(revision fec913830f5e03c221ad08011f79a0ae8eb1eddf)
++++ b/source4/libcli/smb2/connect.c	(revision 3c23c7f36c8c14e2eba5489339bbeb3fb37f298f)
+@@ -187,7 +187,8 @@
+ 				      state->transport->conn, timeout_msec,
+ 				      min_protocol,
+ 				      state->transport->options.max_protocol,
+-				      state->transport->options.max_credits);
++				      state->transport->options.max_credits,
++				      NULL);
+ 	if (tevent_req_nomem(subreq, req)) {
+ 		return;
+ 	}
+@@ -203,7 +204,7 @@
+ 		struct tevent_req);
+ 	NTSTATUS status;
+ 
+-	status = smbXcli_negprot_recv(subreq);
++	status = smbXcli_negprot_recv(subreq, NULL, NULL);
+ 	TALLOC_FREE(subreq);
+ 	if (tevent_req_nterror(req, status)) {
+ 		return;
+@@ -404,6 +405,7 @@
+ 			  const char *share,
+ 			  struct resolve_context *resolve_ctx,
+ 			  struct cli_credentials *credentials,
++			  struct smbXcli_conn **existing_conn,
+ 			  uint64_t previous_session_id,
+ 			  struct smb2_tree **tree,
+ 			  struct tevent_context *ev,
+@@ -428,7 +430,7 @@
+ 				   resolve_ctx,
+ 				   credentials,
+ 				   false, /* fallback_to_anonymous */
+-				   NULL, /* existing_conn */
++				   existing_conn,
+ 				   previous_session_id,
+ 				   options,
+ 				   socket_options,
+@@ -472,6 +474,7 @@
+ 
+ 	status = smb2_connect_ext(mem_ctx, host, ports, share, resolve_ctx,
+ 				  credentials,
++				  NULL, /* existing_conn */
+ 				  0, /* previous_session_id */
+ 				  tree, ev, options, socket_options,
+ 				  gensec_settings);
+Index: source4/libcli/smb_composite/connect_nego.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source4/libcli/smb_composite/connect_nego.c b/source4/libcli/smb_composite/connect_nego.c
+--- a/source4/libcli/smb_composite/connect_nego.c	(revision fec913830f5e03c221ad08011f79a0ae8eb1eddf)
++++ b/source4/libcli/smb_composite/connect_nego.c	(revision d167b80dc729f8c8caf7052a3494433f9764b72c)
+@@ -167,7 +167,8 @@
+ 				      timeout_msec,
+ 				      state->options.min_protocol,
+ 				      state->options.max_protocol,
+-				      state->options.max_credits);
++				      state->options.max_credits,
++				      NULL);
+ 	if (tevent_req_nomem(subreq, req)) {
+ 		return;
+ 	}
+@@ -181,7 +182,7 @@
+ 		struct tevent_req);
+ 	NTSTATUS status;
+ 
+-	status = smbXcli_negprot_recv(subreq);
++	status = smbXcli_negprot_recv(subreq, NULL, NULL);
+ 	TALLOC_FREE(subreq);
+ 	if (tevent_req_nterror(req, status)) {
+ 		return;
+Index: source4/torture/smb2/util.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source4/torture/smb2/util.c b/source4/torture/smb2/util.c
+--- a/source4/torture/smb2/util.c	(revision d167b80dc729f8c8caf7052a3494433f9764b72c)
++++ b/source4/torture/smb2/util.c	(revision 3c23c7f36c8c14e2eba5489339bbeb3fb37f298f)
+@@ -426,6 +426,7 @@
+ 				  share,
+ 				  lpcfg_resolve_context(tctx->lp_ctx),
+ 				  samba_cmdline_get_creds(),
++				  NULL, /* existing_conn */
+ 				  previous_session_id,
+ 				  tree,
+ 				  tctx->ev,
+@@ -459,35 +460,28 @@
+ /**
+  * SMB2 connect with share from soption
+  **/
+-bool torture_smb2_con_sopt(struct torture_context *tctx,
+-			   const char *soption,
+-			   struct smb2_tree **tree)
++bool torture_smb2_con_share(struct torture_context *tctx,
++			    const char *share,
++			    struct smb2_tree **tree)
+ {
+ 	struct smbcli_options options;
+ 	NTSTATUS status;
+ 	const char *host = torture_setting_string(tctx, "host", NULL);
+-	const char *share = torture_setting_string(tctx, soption, NULL);
+ 
+ 	lpcfg_smbcli_options(tctx->lp_ctx, &options);
+ 
+-	if (share == NULL) {
+-		torture_comment(tctx, "No share for option %s\n", soption);
+-		return false;
+-	}
+-
+-	status = smb2_connect_ext(tctx,
+-				  host,
+-				  lpcfg_smb_ports(tctx->lp_ctx),
+-				  share,
+-				  lpcfg_resolve_context(tctx->lp_ctx),
+-				  samba_cmdline_get_creds(),
+-				  0,
+-				  tree,
+-				  tctx->ev,
+-				  &options,
+-				  lpcfg_socket_options(tctx->lp_ctx),
+-				  lpcfg_gensec_settings(tctx, tctx->lp_ctx)
+-				  );
++	status = smb2_connect(tctx,
++			      host,
++			      lpcfg_smb_ports(tctx->lp_ctx),
++			      share,
++			      lpcfg_resolve_context(tctx->lp_ctx),
++			      samba_cmdline_get_creds(),
++			      tree,
++			      tctx->ev,
++			      &options,
++			      lpcfg_socket_options(tctx->lp_ctx),
++			      lpcfg_gensec_settings(tctx, tctx->lp_ctx)
++			      );
+ 	if (!NT_STATUS_IS_OK(status)) {
+ 		torture_comment(tctx, "Failed to connect to SMB2 share \\\\%s\\%s - %s\n",
+ 		       host, share, nt_errstr(status));
+@@ -496,6 +490,23 @@
+ 	return true;
+ }
+ 
++/**
++ * SMB2 connect with share from soption
++ **/
++bool torture_smb2_con_sopt(struct torture_context *tctx,
++			   const char *soption,
++			   struct smb2_tree **tree)
++{
++	const char *share = torture_setting_string(tctx, soption, NULL);
++
++	if (share == NULL) {
++		torture_comment(tctx, "No share for option %s\n", soption);
++		return false;
++	}
++
++	return torture_smb2_con_share(tctx, share, tree);
++}
++
+ /*
+   create and return a handle to a test file
+   with a specific access mask
+Index: source4/torture/smb2/acls.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source4/torture/smb2/acls.c b/source4/torture/smb2/acls.c
+--- a/source4/torture/smb2/acls.c	(revision 65b05090ee4153ffd407e53a076a60706911f0ef)
++++ b/source4/torture/smb2/acls.c	(revision 8c727eef9e304b9cca6ed6baa718c2e5bc4c0490)
+@@ -2139,40 +2139,6 @@
+ }
+ #endif
+ 
+-/**
+- * SMB2 connect with explicit share
+- **/
+-static bool torture_smb2_con_share(struct torture_context *tctx,
+-                           const char *share,
+-                           struct smb2_tree **tree)
+-{
+-        struct smbcli_options options;
+-        NTSTATUS status;
+-        const char *host = torture_setting_string(tctx, "host", NULL);
+-
+-        lpcfg_smbcli_options(tctx->lp_ctx, &options);
+-
+-        status = smb2_connect_ext(tctx,
+-                                  host,
+-                                  lpcfg_smb_ports(tctx->lp_ctx),
+-                                  share,
+-                                  lpcfg_resolve_context(tctx->lp_ctx),
+-                                  samba_cmdline_get_creds(),
+-                                  0,
+-                                  tree,
+-                                  tctx->ev,
+-                                  &options,
+-                                  lpcfg_socket_options(tctx->lp_ctx),
+-                                  lpcfg_gensec_settings(tctx, tctx->lp_ctx)
+-                                  );
+-        if (!NT_STATUS_IS_OK(status)) {
+-		torture_comment(tctx, "Failed to connect to SMB2 share \\\\%s\\%s - %s\n",
+-			host, share, nt_errstr(status));
+-                return false;
+-        }
+-        return true;
+-}
+-
+ static bool test_access_based(struct torture_context *tctx,
+ 				struct smb2_tree *tree)
+ {
+Index: source4/torture/vfs/acl_xattr.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source4/torture/vfs/acl_xattr.c b/source4/torture/vfs/acl_xattr.c
+--- a/source4/torture/vfs/acl_xattr.c	(revision 65b05090ee4153ffd407e53a076a60706911f0ef)
++++ b/source4/torture/vfs/acl_xattr.c	(revision 8c727eef9e304b9cca6ed6baa718c2e5bc4c0490)
+@@ -47,40 +47,6 @@
+ 	} \
+ } while (0)
+ 
+-/**
+- * SMB2 connect with explicit share
+- **/
+-static bool torture_smb2_con_share(struct torture_context *tctx,
+-                           const char *share,
+-                           struct smb2_tree **tree)
+-{
+-        struct smbcli_options options;
+-        NTSTATUS status;
+-        const char *host = torture_setting_string(tctx, "host", NULL);
+-
+-        lpcfg_smbcli_options(tctx->lp_ctx, &options);
+-
+-        status = smb2_connect_ext(tctx,
+-                                  host,
+-                                  lpcfg_smb_ports(tctx->lp_ctx),
+-                                  share,
+-                                  lpcfg_resolve_context(tctx->lp_ctx),
+-                                  samba_cmdline_get_creds(),
+-                                  0,
+-                                  tree,
+-                                  tctx->ev,
+-                                  &options,
+-                                  lpcfg_socket_options(tctx->lp_ctx),
+-                                  lpcfg_gensec_settings(tctx, tctx->lp_ctx)
+-                                  );
+-        if (!NT_STATUS_IS_OK(status)) {
+-                printf("Failed to connect to SMB2 share \\\\%s\\%s - %s\n",
+-                       host, share, nt_errstr(status));
+-                return false;
+-        }
+-        return true;
+-}
+-
+ static bool test_default_acl_posix(struct torture_context *tctx,
+ 				   struct smb2_tree *tree_unused)
+ {
+Index: source4/torture/smb2/multichannel.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source4/torture/smb2/multichannel.c b/source4/torture/smb2/multichannel.c
+--- a/source4/torture/smb2/multichannel.c	(revision 3c23c7f36c8c14e2eba5489339bbeb3fb37f298f)
++++ b/source4/torture/smb2/multichannel.c	(revision 534f13630333644db8e19dc23b6bd38fd6ec24f3)
+@@ -31,6 +31,7 @@
+ #include "lib/cmdline/cmdline.h"
+ #include "libcli/security/security.h"
+ #include "libcli/resolve/resolve.h"
++#include "lib/socket/socket.h"
+ #include "lib/param/param.h"
+ #include "lib/events/events.h"
+ #include "oplock_break_handler.h"
+@@ -2345,6 +2346,315 @@
+ 	return ret;
+ }
+ 
++/*
++ * Test channel merging race
++ * This is a regression test for
++ * https://bugzilla.samba.org/show_bug.cgi?id=15346
++ */
++struct test_multichannel_bug_15346_conn;
++
++struct test_multichannel_bug_15346_state {
++	struct torture_context *tctx;
++	struct test_multichannel_bug_15346_conn *conns;
++	size_t num_conns;
++	size_t num_ready;
++	bool asserted;
++	bool looping;
++};
++
++struct test_multichannel_bug_15346_conn {
++	struct test_multichannel_bug_15346_state *state;
++	size_t idx;
++	struct smbXcli_conn *smbXcli;
++	struct tevent_req *nreq;
++	struct tevent_req *ereq;
++};
++
++static void test_multichannel_bug_15346_ndone(struct tevent_req *subreq);
++static void test_multichannel_bug_15346_edone(struct tevent_req *subreq);
++
++static void test_multichannel_bug_15346_ndone(struct tevent_req *subreq)
++{
++	struct test_multichannel_bug_15346_conn *conn =
++		(struct test_multichannel_bug_15346_conn *)
++		tevent_req_callback_data_void(subreq);
++	struct test_multichannel_bug_15346_state *state = conn->state;
++	struct torture_context *tctx = state->tctx;
++	NTSTATUS status;
++	bool ok = false;
++
++	SMB_ASSERT(conn->nreq == subreq);
++	conn->nreq = NULL;
++
++	status = smbXcli_negprot_recv(subreq, NULL, NULL);
++	TALLOC_FREE(subreq);
++	torture_assert_ntstatus_ok_goto(tctx, status, ok, asserted,
++					"smbXcli_negprot_recv failed");
++
++	torture_comment(tctx, "conn[%zu]: negprot done\n", conn->idx);
++
++	conn->ereq = smb2cli_echo_send(conn->smbXcli,
++				       tctx->ev,
++				       conn->smbXcli,
++				       state->num_conns * 2 * 1000);
++	torture_assert_goto(tctx, conn->ereq != NULL, ok, asserted,
++			    "smb2cli_echo_send");
++	tevent_req_set_callback(conn->ereq,
++				test_multichannel_bug_15346_edone,
++				conn);
++
++	return;
++
++asserted:
++	SMB_ASSERT(!ok);
++	state->asserted = true;
++	state->looping = false;
++	return;
++}
++
++static void test_multichannel_bug_15346_edone(struct tevent_req *subreq)
++{
++	struct test_multichannel_bug_15346_conn *conn =
++		(struct test_multichannel_bug_15346_conn *)
++		tevent_req_callback_data_void(subreq);
++	struct test_multichannel_bug_15346_state *state = conn->state;
++	struct torture_context *tctx = state->tctx;
++	NTSTATUS status;
++	bool ok = false;
++
++	SMB_ASSERT(conn->ereq == subreq);
++	conn->ereq = NULL;
++
++	status = smb2cli_echo_recv(subreq);
++	TALLOC_FREE(subreq);
++	torture_assert_ntstatus_ok_goto(tctx, status, ok, asserted,
++					"smb2cli_echo_recv failed");
++
++	torture_comment(tctx, "conn[%zu]: echo done\n", conn->idx);
++
++	state->num_ready += 1;
++	if (state->num_ready < state->num_conns) {
++		return;
++	}
++
++	state->looping = false;
++	return;
++
++asserted:
++	SMB_ASSERT(!ok);
++	state->asserted = true;
++	state->looping = false;
++	return;
++}
++
++static bool test_multichannel_bug_15346(struct torture_context *tctx,
++					struct smb2_tree *tree1)
++{
++	const char *host = torture_setting_string(tctx, "host", NULL);
++	const char *share = torture_setting_string(tctx, "share", NULL);
++	struct resolve_context *resolve_ctx = lpcfg_resolve_context(tctx->lp_ctx);
++	const char *socket_options = lpcfg_socket_options(tctx->lp_ctx);
++	struct gensec_settings *gsettings = NULL;
++	bool ret = true;
++	NTSTATUS status;
++	struct smb2_transport *transport1 = tree1->session->transport;
++	struct test_multichannel_bug_15346_state *state = NULL;
++	uint32_t server_capabilities;
++	struct smb2_handle root_handle = {{0}};
++	size_t i;
++
++	if (smbXcli_conn_protocol(transport1->conn) < PROTOCOL_SMB3_00) {
++		torture_fail(tctx,
++			     "SMB 3.X Dialect family required for Multichannel"
++			     " tests\n");
++	}
++
++	server_capabilities = smb2cli_conn_server_capabilities(
++					tree1->session->transport->conn);
++	if (!(server_capabilities & SMB2_CAP_MULTI_CHANNEL)) {
++		torture_fail(tctx,
++			     "Server does not support multichannel.");
++	}
++
++	torture_comment(tctx, "Testing for BUG 15346\n");
++
++	state = talloc_zero(tctx, struct test_multichannel_bug_15346_state);
++	torture_assert_goto(tctx, state != NULL, ret, done,
++			    "talloc_zero");
++	state->tctx = tctx;
++
++	gsettings = lpcfg_gensec_settings(state, tctx->lp_ctx);
++	torture_assert_goto(tctx, gsettings != NULL, ret, done,
++			    "lpcfg_gensec_settings");
++
++	/*
++	 * 32 is the W2K12R2 and W2K16 limit
++	 * add 31 additional connections
++	 */
++	state->num_conns = 31;
++	state->conns = talloc_zero_array(state,
++				  struct test_multichannel_bug_15346_conn,
++				  state->num_conns);
++	torture_assert_goto(tctx, state->conns != NULL, ret, done,
++			    "talloc_zero_array");
++
++	/*
++	 * First we open additional the tcp connections
++	 */
++
++	for (i = 0; i < state->num_conns; i++) {
++		struct test_multichannel_bug_15346_conn *conn = &state->conns[i];
++		struct socket_context *sock = NULL;
++		uint16_t port = 445;
++		struct smbcli_options options = transport1->options;
++
++		conn->state = state;
++		conn->idx = i;
++
++		status = socket_connect_multi(state->conns,
++					      host,
++					      1, &port,
++					      resolve_ctx,
++					      tctx->ev,
++					      &sock,
++					      &port);
++		torture_assert_ntstatus_ok_goto(tctx, status, ret, done,
++						"socket_connect_multi failed");
++
++		conn->smbXcli = smbXcli_conn_create(state->conns,
++					sock->fd,
++					host,
++					SMB_SIGNING_OFF,
++					0,
++					&options.client_guid,
++					options.smb2_capabilities,
++					&options.smb3_capabilities);
++		torture_assert_goto(tctx, conn->smbXcli != NULL, ret, done,
++				    "smbXcli_conn_create failed");
++		sock->fd = -1;
++		TALLOC_FREE(sock);
++	}
++
++	/*
++	 * Now prepare the async SMB2 Negotiate requests
++	 */
++	for (i = 0; i < state->num_conns; i++) {
++		struct test_multichannel_bug_15346_conn *conn = &state->conns[i];
++
++		conn->nreq = smbXcli_negprot_send(conn->smbXcli,
++						  tctx->ev,
++						  conn->smbXcli,
++						  state->num_conns * 2 * 1000,
++						  smbXcli_conn_protocol(transport1->conn),
++						  smbXcli_conn_protocol(transport1->conn),
++						  33, /* max_credits */
++						  NULL);
++		torture_assert_goto(tctx, conn->nreq != NULL, ret, done, "smbXcli_negprot_send");
++		tevent_req_set_callback(conn->nreq,
++					test_multichannel_bug_15346_ndone,
++					conn);
++	}
++
++	/*
++	 * now we loop until all negprot and the first round
++	 * of echos are done.
++	 */
++	state->looping = true;
++	while (state->looping) {
++		torture_assert_goto(tctx, tevent_loop_once(tctx->ev) == 0,
++				    ret, done, "tevent_loop_once");
++	}
++
++	if (state->asserted) {
++		ret = false;
++		goto done;
++	}
++
++	/*
++	 * No we check that the connections are still usable
++	 */
++	for (i = 0; i < state->num_conns; i++) {
++		struct test_multichannel_bug_15346_conn *conn = &state->conns[i];
++
++		torture_comment(tctx, "conn[%zu]: checking echo again1\n", conn->idx);
++
++		status = smb2cli_echo(conn->smbXcli, 1000);
++		torture_assert_ntstatus_ok_goto(tctx, status, ret, done,
++						"smb2cli_echo failed");
++	}
++
++	status = smb2_util_roothandle(tree1, &root_handle);
++	torture_assert_ntstatus_ok_goto(tctx, status, ret, done,
++					"smb2_util_roothandle failed");
++
++	/*
++	 * No we check that the connections are still usable
++	 */
++	for (i = 0; i < state->num_conns; i++) {
++		struct test_multichannel_bug_15346_conn *conn = &state->conns[i];
++		struct smbcli_options options = transport1->options;
++		struct smb2_session *session = NULL;
++		struct smb2_tree *tree = NULL;
++		union smb_fileinfo io;
++
++		torture_comment(tctx, "conn[%zu]: checking session bind\n", conn->idx);
++
++		/*
++		 * Prepare smb2_{tree,session,transport} structures
++		 * for the existing connection.
++		 */
++		options.only_negprot = true;
++		status = smb2_connect_ext(state->conns,
++					  host,
++					  NULL, /* ports */
++					  share,
++					  resolve_ctx,
++					  samba_cmdline_get_creds(),
++					  &conn->smbXcli,
++					  0, /* previous_session_id */
++					  &tree,
++					  tctx->ev,
++					  &options,
++					  socket_options,
++					  gsettings);
++		torture_assert_ntstatus_ok_goto(tctx, status, ret, done,
++						"smb2_connect_ext failed");
++		conn->smbXcli = tree->session->transport->conn;
++
++		session = smb2_session_channel(tree->session->transport,
++					       lpcfg_gensec_settings(tree, tctx->lp_ctx),
++					       tree,
++					       tree1->session);
++		torture_assert_goto(tctx, session != NULL, ret, done,
++				    "smb2_session_channel failed");
++
++		status = smb2_session_setup_spnego(session,
++						   samba_cmdline_get_creds(),
++						   0 /* previous_session_id */);
++		torture_assert_ntstatus_ok_goto(tctx, status, ret, done,
++						"smb2_session_setup_spnego failed");
++
++		/*
++		 * Fix up the bound smb2_tree
++		 */
++		tree->session = session;
++		tree->smbXcli = tree1->smbXcli;
++
++		ZERO_STRUCT(io);
++		io.generic.level = RAW_FILEINFO_SMB2_ALL_INFORMATION;
++		io.generic.in.file.handle = root_handle;
++
++		status = smb2_getinfo_file(tree, tree, &io);
++		torture_assert_ntstatus_ok_goto(tctx, status, ret, done,
++						"smb2_getinfo_file failed");
++	}
++
++ done:
++	talloc_free(state);
++
++	return ret;
++}
++
+ struct torture_suite *torture_smb2_multichannel_init(TALLOC_CTX *ctx)
+ {
+ 	struct torture_suite *suite = torture_suite_create(ctx, "multichannel");
+@@ -2354,10 +2664,13 @@
+ 								   "oplocks");
+ 	struct torture_suite *suite_leases = torture_suite_create(ctx,
+ 								  "leases");
++	struct torture_suite *suite_bugs = torture_suite_create(ctx,
++								"bugs");
+ 
+ 	torture_suite_add_suite(suite, suite_generic);
+ 	torture_suite_add_suite(suite, suite_oplocks);
+ 	torture_suite_add_suite(suite, suite_leases);
++	torture_suite_add_suite(suite, suite_bugs);
+ 
+ 	torture_suite_add_1smb2_test(suite_generic, "interface_info",
+ 				     test_multichannel_interface_info);
+@@ -2379,6 +2692,8 @@
+ 				     test_multichannel_lease_break_test3);
+ 	torture_suite_add_1smb2_test(suite_leases, "test4",
+ 				     test_multichannel_lease_break_test4);
++	torture_suite_add_1smb2_test(suite_bugs, "bug_15346",
++				     test_multichannel_bug_15346);
+ 
+ 	suite->description = talloc_strdup(suite, "SMB2 Multichannel tests");
+ 
+Index: source3/smbd/smbXsrv_client.c
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/source3/smbd/smbXsrv_client.c b/source3/smbd/smbXsrv_client.c
+--- a/source3/smbd/smbXsrv_client.c	(revision 534f13630333644db8e19dc23b6bd38fd6ec24f3)
++++ b/source3/smbd/smbXsrv_client.c	(revision 8738efc4042430cc123c04234bf6d9bfa4ae6f67)
+@@ -487,6 +487,7 @@
+ 	struct tevent_context *ev;
+ 	struct smbd_smb2_request *smb2req;
+ 	struct db_record *db_rec;
++	struct server_id sent_server_id;
+ 	uint64_t watch_instance;
+ 	uint32_t last_seqnum;
+ 	struct tevent_req *filter_subreq;
+@@ -529,6 +530,8 @@
+ 
+ 	tevent_req_set_cleanup_fn(req, smb2srv_client_mc_negprot_cleanup);
+ 
++	server_id_set_disconnected(&state->sent_server_id);
++
+ 	smb2srv_client_mc_negprot_next(req);
+ 
+ 	if (!tevent_req_is_in_progress(req)) {
+@@ -554,7 +557,6 @@
+ 	uint32_t seqnum = 0;
+ 	struct server_id last_server_id = { .pid = 0, };
+ 
+-	TALLOC_FREE(state->filter_subreq);
+ 	SMB_ASSERT(state->db_rec == NULL);
+ 	state->db_rec = smbXsrv_client_global_fetch_locked(table->global.db_ctx,
+ 							   &client_guid,
+@@ -625,6 +627,30 @@
+ 		return;
+ 	}
+ 
++	if (server_id_equal(&state->sent_server_id, &global->server_id)) {
++		/*
++		 * We hit a race with other concurrent connections,
++		 * which have woken us.
++		 *
++		 * We already sent the pass or drop message to
++		 * the process, so we need to wait for a
++		 * response and not pass the connection
++		 * again! Otherwise the process would
++		 * receive the same tcp connection via
++		 * more than one file descriptor and
++		 * create more than one smbXsrv_connection
++		 * structure for the same tcp connection,
++		 * which means the client would see more
++		 * than one SMB2 negprot response to its
++		 * single SMB2 netprot request and we
++		 * as server get the session keys and
++		 * message id validation wrong
++		 */
++		goto watch_again;
++	}
++
++	server_id_set_disconnected(&state->sent_server_id);
++
+ 	/*
+ 	 * If last_server_id is set, we expect
+ 	 * smbXsrv_client_global_verify_record()
+@@ -635,6 +661,7 @@
+ 	SMB_ASSERT(last_server_id.pid == 0);
+ 	last_server_id = global->server_id;
+ 
++	TALLOC_FREE(state->filter_subreq);
+ 	if (procid_is_local(&global->server_id)) {
+ 		subreq = messaging_filtered_read_send(state,
+ 						      state->ev,
+@@ -659,6 +686,7 @@
+ 			 */
+ 			goto verify_again;
+ 		}
++		state->sent_server_id = global->server_id;
+ 		if (tevent_req_nterror(req, status)) {
+ 			return;
+ 		}
+@@ -673,11 +701,14 @@
+ 			 */
+ 			goto verify_again;
+ 		}
++		state->sent_server_id = global->server_id;
+ 		if (tevent_req_nterror(req, status)) {
+ 			return;
+ 		}
+ 	}
+ 
++watch_again:
++
+ 	/*
+ 	 * If the record changed, but we are not happy with the change yet,
+ 	 * we better remove ourself from the waiter list
 Index: source3/smbd/smb1_reply.c
 IDEA additional info:
 Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source3/smbd/smb1_reply.c b/source3/smbd/smb1_reply.c
---- a/source3/smbd/smb1_reply.c	(revision b8598d4b9fbe20ed878d022ab2bb3e0f39c8a202)
-+++ b/source3/smbd/smb1_reply.c	(revision 5ffa61f31590abe61bb3492ccc2920e28f2ea50c)
+--- a/source3/smbd/smb1_reply.c	(revision 8738efc4042430cc123c04234bf6d9bfa4ae6f67)
++++ b/source3/smbd/smb1_reply.c	(revision ac25afd6ebdc911e52719fc705a3dc57dd072a96)
 @@ -52,6 +52,46 @@
  #include "source3/printing/rap_jobid.h"
  #include "source3/lib/substitute.h"
@@ -221,82 +2579,14 @@ diff --git a/source3/smbd/smb1_reply.c b/source3/smbd/smb1_reply.c
  		END_PROFILE(SMBclose);
  		return;
  	}
-Index: source3/smbd/smb2_reply.c
-IDEA additional info:
-Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
-<+>UTF-8
-===================================================================
-diff --git a/source3/smbd/smb2_reply.c b/source3/smbd/smb2_reply.c
---- a/source3/smbd/smb2_reply.c	(revision 0afe990fb9492f652af10a515ad0b2b3fb13f1cd)
-+++ b/source3/smbd/smb2_reply.c	(revision 5ffa61f31590abe61bb3492ccc2920e28f2ea50c)
-@@ -524,46 +524,6 @@
- 				  bufrem, flags);
- }
- 
--/****************************************************************************
-- Check if we have a correct fsp pointing to a file. Basic check for open fsp.
--****************************************************************************/
--
--bool check_fsp_open(connection_struct *conn, struct smb_request *req,
--		    files_struct *fsp)
--{
--	if ((fsp == NULL) || (conn == NULL)) {
--		reply_nterror(req, NT_STATUS_INVALID_HANDLE);
--		return False;
--	}
--	if ((conn != fsp->conn) || (req->vuid != fsp->vuid)) {
--		reply_nterror(req, NT_STATUS_INVALID_HANDLE);
--		return False;
--	}
--	return True;
--}
--
--/****************************************************************************
-- Check if we have a correct fsp pointing to a file.
--****************************************************************************/
--
--bool check_fsp(connection_struct *conn, struct smb_request *req,
--	       files_struct *fsp)
--{
--	if (!check_fsp_open(conn, req, fsp)) {
--		return False;
--	}
--	if (fsp->fsp_flags.is_directory) {
--		reply_nterror(req, NT_STATUS_INVALID_DEVICE_REQUEST);
--		return False;
--	}
--	if (fsp_get_pathref_fd(fsp) == -1) {
--		reply_nterror(req, NT_STATUS_ACCESS_DENIED);
--		return False;
--	}
--	fsp->num_smb_operations++;
--	return True;
--}
--
- /****************************************************************************
-  Check if we have a correct fsp pointing to a quota fake file. Replacement for
-  the CHECK_NTQUOTA_HANDLE_OK macro.
-@@ -572,7 +532,11 @@
- bool check_fsp_ntquota_handle(connection_struct *conn, struct smb_request *req,
- 			      files_struct *fsp)
- {
--	if (!check_fsp_open(conn, req, fsp)) {
-+	if ((fsp == NULL) || (conn == NULL)) {
-+		return false;
-+	}
-+
-+	if ((conn != fsp->conn) || (req->vuid != fsp->vuid)) {
- 		return false;
- 	}
- 
 Index: libcli/util/tstream.c
 IDEA additional info:
 Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/libcli/util/tstream.c b/libcli/util/tstream.c
---- a/libcli/util/tstream.c	(revision 5ffa61f31590abe61bb3492ccc2920e28f2ea50c)
-+++ b/libcli/util/tstream.c	(revision 265cb59c2a1d9e3b74acfa125e1ce391ee021d27)
+--- a/libcli/util/tstream.c	(revision ac25afd6ebdc911e52719fc705a3dc57dd072a96)
++++ b/libcli/util/tstream.c	(revision 71b522e57bea9d6f38c767f63e4bbaaad44bc9c6)
 @@ -111,7 +111,8 @@
  		return;
  	}
@@ -344,8 +2634,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/libcli/util/tstream.h b/libcli/util/tstream.h
---- a/libcli/util/tstream.h	(revision 5ffa61f31590abe61bb3492ccc2920e28f2ea50c)
-+++ b/libcli/util/tstream.h	(revision 265cb59c2a1d9e3b74acfa125e1ce391ee021d27)
+--- a/libcli/util/tstream.h	(revision ac25afd6ebdc911e52719fc705a3dc57dd072a96)
++++ b/libcli/util/tstream.h	(revision 71b522e57bea9d6f38c767f63e4bbaaad44bc9c6)
 @@ -23,6 +23,8 @@
  /**
   * @brief The function which will report the size of the full pdu.
@@ -403,8 +2693,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/libcli/ldap/ldap_message.c b/libcli/ldap/ldap_message.c
---- a/libcli/ldap/ldap_message.c	(revision 081b00b784f1e8e18bbfbc0cda1da795ac11b77b)
-+++ b/libcli/ldap/ldap_message.c	(revision 265cb59c2a1d9e3b74acfa125e1ce391ee021d27)
+--- a/libcli/ldap/ldap_message.c	(revision 1dfc1bcbf9e5f7bad70713ffea03dc7617c9f9c2)
++++ b/libcli/ldap/ldap_message.c	(revision 71b522e57bea9d6f38c767f63e4bbaaad44bc9c6)
 @@ -1647,7 +1647,10 @@
    return NT_STATUS_OK if a blob has enough bytes in it to be a full
    ldap packet. Set packet_size if true.
@@ -423,8 +2713,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/libcli/ldap/ldap_message.h b/libcli/ldap/ldap_message.h
---- a/libcli/ldap/ldap_message.h	(revision 081b00b784f1e8e18bbfbc0cda1da795ac11b77b)
-+++ b/libcli/ldap/ldap_message.h	(revision 265cb59c2a1d9e3b74acfa125e1ce391ee021d27)
+--- a/libcli/ldap/ldap_message.h	(revision 1dfc1bcbf9e5f7bad70713ffea03dc7617c9f9c2)
++++ b/libcli/ldap/ldap_message.h	(revision 71b522e57bea9d6f38c767f63e4bbaaad44bc9c6)
 @@ -218,6 +218,7 @@
  };
  
@@ -451,8 +2741,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source4/dns_server/dns_server.c b/source4/dns_server/dns_server.c
---- a/source4/dns_server/dns_server.c	(revision 081b00b784f1e8e18bbfbc0cda1da795ac11b77b)
-+++ b/source4/dns_server/dns_server.c	(revision 265cb59c2a1d9e3b74acfa125e1ce391ee021d27)
+--- a/source4/dns_server/dns_server.c	(revision 1dfc1bcbf9e5f7bad70713ffea03dc7617c9f9c2)
++++ b/source4/dns_server/dns_server.c	(revision 71b522e57bea9d6f38c767f63e4bbaaad44bc9c6)
 @@ -352,13 +352,13 @@
  
  	/*
@@ -491,8 +2781,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source4/kdc/kdc-proxy.c b/source4/kdc/kdc-proxy.c
---- a/source4/kdc/kdc-proxy.c	(revision 081b00b784f1e8e18bbfbc0cda1da795ac11b77b)
-+++ b/source4/kdc/kdc-proxy.c	(revision 265cb59c2a1d9e3b74acfa125e1ce391ee021d27)
+--- a/source4/kdc/kdc-proxy.c	(revision 1dfc1bcbf9e5f7bad70713ffea03dc7617c9f9c2)
++++ b/source4/kdc/kdc-proxy.c	(revision 71b522e57bea9d6f38c767f63e4bbaaad44bc9c6)
 @@ -514,7 +514,7 @@
  					    state->ev,
  					    state->proxy.stream,
@@ -508,8 +2798,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source4/kdc/kdc-server.c b/source4/kdc/kdc-server.c
---- a/source4/kdc/kdc-server.c	(revision 081b00b784f1e8e18bbfbc0cda1da795ac11b77b)
-+++ b/source4/kdc/kdc-server.c	(revision 265cb59c2a1d9e3b74acfa125e1ce391ee021d27)
+--- a/source4/kdc/kdc-server.c	(revision 1dfc1bcbf9e5f7bad70713ffea03dc7617c9f9c2)
++++ b/source4/kdc/kdc-server.c	(revision 71b522e57bea9d6f38c767f63e4bbaaad44bc9c6)
 @@ -346,13 +346,13 @@
  
  	/*
@@ -564,8 +2854,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source4/ldap_server/ldap_server.c b/source4/ldap_server/ldap_server.c
---- a/source4/ldap_server/ldap_server.c	(revision 081b00b784f1e8e18bbfbc0cda1da795ac11b77b)
-+++ b/source4/ldap_server/ldap_server.c	(revision 265cb59c2a1d9e3b74acfa125e1ce391ee021d27)
+--- a/source4/ldap_server/ldap_server.c	(revision 1dfc1bcbf9e5f7bad70713ffea03dc7617c9f9c2)
++++ b/source4/ldap_server/ldap_server.c	(revision 71b522e57bea9d6f38c767f63e4bbaaad44bc9c6)
 @@ -444,6 +444,7 @@
  
  static void ldapsrv_call_read_done(struct tevent_req *subreq);
@@ -597,8 +2887,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source4/libcli/wrepl/winsrepl.c b/source4/libcli/wrepl/winsrepl.c
---- a/source4/libcli/wrepl/winsrepl.c	(revision 081b00b784f1e8e18bbfbc0cda1da795ac11b77b)
-+++ b/source4/libcli/wrepl/winsrepl.c	(revision 265cb59c2a1d9e3b74acfa125e1ce391ee021d27)
+--- a/source4/libcli/wrepl/winsrepl.c	(revision 1dfc1bcbf9e5f7bad70713ffea03dc7617c9f9c2)
++++ b/source4/libcli/wrepl/winsrepl.c	(revision 71b522e57bea9d6f38c767f63e4bbaaad44bc9c6)
 @@ -474,7 +474,7 @@
  					    state->caller.ev,
  					    state->caller.wrepl_socket->stream,
@@ -614,8 +2904,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source4/ntp_signd/ntp_signd.c b/source4/ntp_signd/ntp_signd.c
---- a/source4/ntp_signd/ntp_signd.c	(revision 081b00b784f1e8e18bbfbc0cda1da795ac11b77b)
-+++ b/source4/ntp_signd/ntp_signd.c	(revision 265cb59c2a1d9e3b74acfa125e1ce391ee021d27)
+--- a/source4/ntp_signd/ntp_signd.c	(revision 1dfc1bcbf9e5f7bad70713ffea03dc7617c9f9c2)
++++ b/source4/ntp_signd/ntp_signd.c	(revision 71b522e57bea9d6f38c767f63e4bbaaad44bc9c6)
 @@ -398,13 +398,13 @@
  
  	/*
@@ -654,8 +2944,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source4/torture/ntp/ntp_signd.c b/source4/torture/ntp/ntp_signd.c
---- a/source4/torture/ntp/ntp_signd.c	(revision 081b00b784f1e8e18bbfbc0cda1da795ac11b77b)
-+++ b/source4/torture/ntp/ntp_signd.c	(revision 265cb59c2a1d9e3b74acfa125e1ce391ee021d27)
+--- a/source4/torture/ntp/ntp_signd.c	(revision 1dfc1bcbf9e5f7bad70713ffea03dc7617c9f9c2)
++++ b/source4/torture/ntp/ntp_signd.c	(revision 71b522e57bea9d6f38c767f63e4bbaaad44bc9c6)
 @@ -226,7 +226,7 @@
  					 tctx->ev,
  					 signd_client->tstream,
@@ -671,8 +2961,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source4/wrepl_server/wrepl_in_connection.c b/source4/wrepl_server/wrepl_in_connection.c
---- a/source4/wrepl_server/wrepl_in_connection.c	(revision 081b00b784f1e8e18bbfbc0cda1da795ac11b77b)
-+++ b/source4/wrepl_server/wrepl_in_connection.c	(revision 265cb59c2a1d9e3b74acfa125e1ce391ee021d27)
+--- a/source4/wrepl_server/wrepl_in_connection.c	(revision 1dfc1bcbf9e5f7bad70713ffea03dc7617c9f9c2)
++++ b/source4/wrepl_server/wrepl_in_connection.c	(revision 71b522e57bea9d6f38c767f63e4bbaaad44bc9c6)
 @@ -159,13 +159,13 @@
  
  	/*
@@ -720,8 +3010,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source4/lib/stream/packet.c b/source4/lib/stream/packet.c
---- a/source4/lib/stream/packet.c	(revision 265cb59c2a1d9e3b74acfa125e1ce391ee021d27)
-+++ b/source4/lib/stream/packet.c	(revision 884011bb3a375ef057d16c99b6b164f66c6cfb05)
+--- a/source4/lib/stream/packet.c	(revision 71b522e57bea9d6f38c767f63e4bbaaad44bc9c6)
++++ b/source4/lib/stream/packet.c	(revision 743433f0810e85a1ef92179d1a1f41b3dcc6b9c1)
 @@ -612,15 +612,3 @@
  	}
  	return NT_STATUS_OK;
@@ -744,8 +3034,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source4/lib/stream/packet.h b/source4/lib/stream/packet.h
---- a/source4/lib/stream/packet.h	(revision 265cb59c2a1d9e3b74acfa125e1ce391ee021d27)
-+++ b/source4/lib/stream/packet.h	(revision 884011bb3a375ef057d16c99b6b164f66c6cfb05)
+--- a/source4/lib/stream/packet.h	(revision 71b522e57bea9d6f38c767f63e4bbaaad44bc9c6)
++++ b/source4/lib/stream/packet.h	(revision 743433f0810e85a1ef92179d1a1f41b3dcc6b9c1)
 @@ -61,6 +61,5 @@
  */
  NTSTATUS packet_full_request_nbt(void *private_data, DATA_BLOB blob, size_t *size);
@@ -759,8 +3049,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/libcli/smb/tstream_smbXcli_np.c b/libcli/smb/tstream_smbXcli_np.c
---- a/libcli/smb/tstream_smbXcli_np.c	(revision 884011bb3a375ef057d16c99b6b164f66c6cfb05)
-+++ b/libcli/smb/tstream_smbXcli_np.c	(revision 203c8108a61919d0ece47f635eb480f51dcc4cfb)
+--- a/libcli/smb/tstream_smbXcli_np.c	(revision 743433f0810e85a1ef92179d1a1f41b3dcc6b9c1)
++++ b/libcli/smb/tstream_smbXcli_np.c	(revision b98062c3d8529cfb02b2141a1d5546bb76e2ab3a)
 @@ -57,6 +57,7 @@
  	uint16_t fnum;
  	uint64_t fid_persistent;
@@ -861,8 +3151,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/libcli/smb/tstream_smbXcli_np.h b/libcli/smb/tstream_smbXcli_np.h
---- a/libcli/smb/tstream_smbXcli_np.h	(revision 884011bb3a375ef057d16c99b6b164f66c6cfb05)
-+++ b/libcli/smb/tstream_smbXcli_np.h	(revision 203c8108a61919d0ece47f635eb480f51dcc4cfb)
+--- a/libcli/smb/tstream_smbXcli_np.h	(revision 743433f0810e85a1ef92179d1a1f41b3dcc6b9c1)
++++ b/libcli/smb/tstream_smbXcli_np.h	(revision b98062c3d8529cfb02b2141a1d5546bb76e2ab3a)
 @@ -69,4 +69,7 @@
   */
  #define TSTREAM_SMBXCLI_NP_MAX_BUF_SIZE 4280
@@ -878,8 +3168,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/libcli/tstream_binding_handle/tstream_binding_handle.c b/libcli/tstream_binding_handle/tstream_binding_handle.c
 new file mode 100644
---- /dev/null	(revision af964b295b10eb140bf4e80b199790a5c6291bad)
-+++ b/libcli/tstream_binding_handle/tstream_binding_handle.c	(revision af964b295b10eb140bf4e80b199790a5c6291bad)
+--- /dev/null	(revision d15170fe10571a92ccbb43bba3b97915833f9e8f)
++++ b/libcli/tstream_binding_handle/tstream_binding_handle.c	(revision d15170fe10571a92ccbb43bba3b97915833f9e8f)
 @@ -0,0 +1,341 @@
 +/*
 +   Unix SMB/CIFS implementation.
@@ -1229,8 +3519,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/libcli/tstream_binding_handle/tstream_binding_handle.h b/libcli/tstream_binding_handle/tstream_binding_handle.h
 new file mode 100644
---- /dev/null	(revision af964b295b10eb140bf4e80b199790a5c6291bad)
-+++ b/libcli/tstream_binding_handle/tstream_binding_handle.h	(revision af964b295b10eb140bf4e80b199790a5c6291bad)
+--- /dev/null	(revision d15170fe10571a92ccbb43bba3b97915833f9e8f)
++++ b/libcli/tstream_binding_handle/tstream_binding_handle.h	(revision d15170fe10571a92ccbb43bba3b97915833f9e8f)
 @@ -0,0 +1,38 @@
 +/*
 +   Unix SMB/CIFS implementation.
@@ -1277,8 +3567,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/libcli/tstream_binding_handle/wscript_build b/libcli/tstream_binding_handle/wscript_build
 new file mode 100644
---- /dev/null	(revision af964b295b10eb140bf4e80b199790a5c6291bad)
-+++ b/libcli/tstream_binding_handle/wscript_build	(revision af964b295b10eb140bf4e80b199790a5c6291bad)
+--- /dev/null	(revision d15170fe10571a92ccbb43bba3b97915833f9e8f)
++++ b/libcli/tstream_binding_handle/wscript_build	(revision d15170fe10571a92ccbb43bba3b97915833f9e8f)
 @@ -0,0 +1,5 @@
 +#!/usr/bin/env python
 +
@@ -1291,8 +3581,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/wscript_build b/wscript_build
---- a/wscript_build	(revision 203c8108a61919d0ece47f635eb480f51dcc4cfb)
-+++ b/wscript_build	(revision b10d35e34c5f39a3496307f4d16f8ce32329a57c)
+--- a/wscript_build	(revision b98062c3d8529cfb02b2141a1d5546bb76e2ab3a)
++++ b/wscript_build	(revision dea835eb6735286d1a385ca647a6aa931fa1bcea)
 @@ -106,6 +106,7 @@
  bld.RECURSE('libcli/smb')
  bld.RECURSE('libcli/util')
@@ -1315,8 +3605,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/libcli/smb/smb2cli_ioctl.c b/libcli/smb/smb2cli_ioctl.c
---- a/libcli/smb/smb2cli_ioctl.c	(revision af964b295b10eb140bf4e80b199790a5c6291bad)
-+++ b/libcli/smb/smb2cli_ioctl.c	(revision 6b71f142f49b5703c7b27b9dfa164b31d2e1a8d4)
+--- a/libcli/smb/smb2cli_ioctl.c	(revision d15170fe10571a92ccbb43bba3b97915833f9e8f)
++++ b/libcli/smb/smb2cli_ioctl.c	(revision ca885d59174724bd045c4fcfab98d8bf3337ca68)
 @@ -22,6 +22,7 @@
  #include "lib/util/tevent_ntstatus.h"
  #include "smb_common.h"
@@ -1563,63 +3853,14 @@ diff --git a/libcli/smb/smb2cli_ioctl.c b/libcli/smb/smb2cli_ioctl.c
 +	TALLOC_FREE(frame);
 +	return status;
 +}
-Index: libcli/smb/smbXcli_base.h
-IDEA additional info:
-Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
-<+>UTF-8
-===================================================================
-diff --git a/libcli/smb/smbXcli_base.h b/libcli/smb/smbXcli_base.h
---- a/libcli/smb/smbXcli_base.h	(revision af964b295b10eb140bf4e80b199790a5c6291bad)
-+++ b/libcli/smb/smbXcli_base.h	(revision 6b71f142f49b5703c7b27b9dfa164b31d2e1a8d4)
-@@ -928,4 +928,40 @@
- NTSTATUS smb2cli_echo(struct smbXcli_conn *conn,
- 		      uint32_t timeout_msec);
- 
-+struct tevent_req *smb2cli_ioctl_pipe_wait_send(TALLOC_CTX *mem_ctx,
-+						struct tevent_context *ev,
-+						struct smbXcli_conn *conn,
-+						uint32_t timeout_msec,
-+						struct smbXcli_session *session,
-+						struct smbXcli_tcon *tcon,
-+						const char *pipe_name,
-+						uint64_t pipe_wait_timeout);
-+
-+NTSTATUS smb2cli_ioctl_pipe_wait_recv(struct tevent_req *req);
-+
-+NTSTATUS smb2cli_ioctl_pipe_wait(struct smbXcli_conn *conn,
-+				 uint32_t timeout_msec,
-+				 struct smbXcli_session *session,
-+				 struct smbXcli_tcon *tcon,
-+				 const char *pipe_name,
-+				 uint64_t pipe_wait_timeout);
-+
-+struct tevent_req *smb1cli_ioctl_pipe_wait_send(TALLOC_CTX *mem_ctx,
-+					  struct tevent_context *ev,
-+					  struct smbXcli_conn *conn,
-+					  uint32_t timeout_msec,
-+					  uint32_t pid,
-+					  struct smbXcli_session *session,
-+					  struct smbXcli_tcon *tcon,
-+					  const char *pipe_name);
-+
-+NTSTATUS smb1cli_ioctl_pipe_wait_recv(struct tevent_req *req);
-+
-+NTSTATUS smb1cli_ioctl_pipe_wait(struct smbXcli_conn *conn,
-+				 uint32_t timeout_msec,
-+				 uint32_t pid,
-+				 struct smbXcli_session *session,
-+				 struct smbXcli_tcon *tcon,
-+				 const char *pipe_name,
-+				 uint64_t pipe_wait_timeout);
- #endif /* _SMBXCLI_BASE_H_ */
 Index: libcli/smb/wscript
 IDEA additional info:
 Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/libcli/smb/wscript b/libcli/smb/wscript
---- a/libcli/smb/wscript	(revision af964b295b10eb140bf4e80b199790a5c6291bad)
-+++ b/libcli/smb/wscript	(revision 1ce33d728f59631d016b55dddca6624141500c59)
+--- a/libcli/smb/wscript	(revision d15170fe10571a92ccbb43bba3b97915833f9e8f)
++++ b/libcli/smb/wscript	(revision 38381e0ee312eb39937c43f53f0ff8ae063b9dce)
 @@ -49,7 +49,7 @@
      ''',
      deps='''
@@ -1635,8 +3876,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/librpc/idl/ioctl.idl b/librpc/idl/ioctl.idl
---- a/librpc/idl/ioctl.idl	(revision af964b295b10eb140bf4e80b199790a5c6291bad)
-+++ b/librpc/idl/ioctl.idl	(revision 1ce33d728f59631d016b55dddca6624141500c59)
+--- a/librpc/idl/ioctl.idl	(revision d15170fe10571a92ccbb43bba3b97915833f9e8f)
++++ b/librpc/idl/ioctl.idl	(revision 38381e0ee312eb39937c43f53f0ff8ae063b9dce)
 @@ -228,3 +228,15 @@
  		uint32 num_ranges_processed;
  	} fsctl_file_level_trim_rsp;
@@ -1659,8 +3900,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/librpc/idl/wscript_build b/librpc/idl/wscript_build
---- a/librpc/idl/wscript_build	(revision 6b71f142f49b5703c7b27b9dfa164b31d2e1a8d4)
-+++ b/librpc/idl/wscript_build	(revision 796ad7e94bdba6600622fd172f09c856392ba417)
+--- a/librpc/idl/wscript_build	(revision ca885d59174724bd045c4fcfab98d8bf3337ca68)
++++ b/librpc/idl/wscript_build	(revision 83625e0f5a49c15348dcdbf983e1294cd23e51bb)
 @@ -25,6 +25,14 @@
                      output_dir='../gen_ndr',
                      generate_fuzzers=False)
@@ -1692,8 +3933,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/librpc/idl/wsp.idl b/librpc/idl/wsp.idl
 new file mode 100644
---- /dev/null	(revision a9f8e11fce0ff3f268133c283052db42f78c663a)
-+++ b/librpc/idl/wsp.idl	(revision a9f8e11fce0ff3f268133c283052db42f78c663a)
+--- /dev/null	(revision 1968dbe831236d8412dcd7a79475f0771add60b0)
++++ b/librpc/idl/wsp.idl	(revision 1968dbe831236d8412dcd7a79475f0771add60b0)
 @@ -0,0 +1,1483 @@
 +#include "idl_types.h"
 +import "wsp_data.idl";
@@ -3185,8 +5426,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/librpc/idl/wsp_data.idl b/librpc/idl/wsp_data.idl
 new file mode 100644
---- /dev/null	(revision a9f8e11fce0ff3f268133c283052db42f78c663a)
-+++ b/librpc/idl/wsp_data.idl	(revision a9f8e11fce0ff3f268133c283052db42f78c663a)
+--- /dev/null	(revision 1968dbe831236d8412dcd7a79475f0771add60b0)
++++ b/librpc/idl/wsp_data.idl	(revision 1968dbe831236d8412dcd7a79475f0771add60b0)
 @@ -0,0 +1,301 @@
 +#include "idl_types.h"
 +[
@@ -3495,8 +5736,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/librpc/wscript_build b/librpc/wscript_build
---- a/librpc/wscript_build	(revision 6b71f142f49b5703c7b27b9dfa164b31d2e1a8d4)
-+++ b/librpc/wscript_build	(revision 796ad7e94bdba6600622fd172f09c856392ba417)
+--- a/librpc/wscript_build	(revision ca885d59174724bd045c4fcfab98d8bf3337ca68)
++++ b/librpc/wscript_build	(revision 83625e0f5a49c15348dcdbf983e1294cd23e51bb)
 @@ -325,6 +325,23 @@
  	public_deps='ndr'
  	)
@@ -3548,8 +5789,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/librpc/wsp/wsp_helper.c b/librpc/wsp/wsp_helper.c
 new file mode 100644
---- /dev/null	(revision 3e36c94169b50f0d39394d1fc63ea5faab5a11ce)
-+++ b/librpc/wsp/wsp_helper.c	(revision 3e36c94169b50f0d39394d1fc63ea5faab5a11ce)
+--- /dev/null	(revision 66688c7d2210d311b4446b7b9b3e69d16b5d45b2)
++++ b/librpc/wsp/wsp_helper.c	(revision 66688c7d2210d311b4446b7b9b3e69d16b5d45b2)
 @@ -0,0 +1,993 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -4551,8 +6792,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/librpc/wsp/wsp_helper.h b/librpc/wsp/wsp_helper.h
 new file mode 100644
---- /dev/null	(revision af98aa6ac4f2e6c24c56a2a379a1d478f910ca4e)
-+++ b/librpc/wsp/wsp_helper.h	(revision af98aa6ac4f2e6c24c56a2a379a1d478f910ca4e)
+--- /dev/null	(revision e219a86d8ee84dad536297c39a518f27541c5156)
++++ b/librpc/wsp/wsp_helper.h	(revision e219a86d8ee84dad536297c39a518f27541c5156)
 @@ -0,0 +1,98 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -4658,8 +6899,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source3/wscript b/source3/wscript
---- a/source3/wscript	(revision a9f8e11fce0ff3f268133c283052db42f78c663a)
-+++ b/source3/wscript	(revision 4db19daf5d8b87eb801b09d60693bdb619d9861c)
+--- a/source3/wscript	(revision 1968dbe831236d8412dcd7a79475f0771add60b0)
++++ b/source3/wscript	(revision 20cfa4985c8737fce93ec196901a7afe7f1fced9)
 @@ -100,6 +100,7 @@
  
      # default = None means autodetection
@@ -4688,8 +6929,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/librpc/wsp/wsp_restriction.h b/librpc/wsp/wsp_restriction.h
 new file mode 100644
---- /dev/null	(revision 8ca31d329a653f01ca0721f38f5f699ed2b0215b)
-+++ b/librpc/wsp/wsp_restriction.h	(revision 8ca31d329a653f01ca0721f38f5f699ed2b0215b)
+--- /dev/null	(revision ac21578e95e985b84f1db1d18cbebc58180c7a73)
++++ b/librpc/wsp/wsp_restriction.h	(revision ac21578e95e985b84f1db1d18cbebc58180c7a73)
 @@ -0,0 +1,135 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -4833,8 +7074,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/librpc/wsp/README b/librpc/wsp/README
 new file mode 100644
---- /dev/null	(revision 182fea0c88f1440fdcf45c35183b0069efa7d0e6)
-+++ b/librpc/wsp/README	(revision 182fea0c88f1440fdcf45c35183b0069efa7d0e6)
+--- /dev/null	(revision 17275dca8192a7c86ca009c1ae42c41b6cdd6874)
++++ b/librpc/wsp/README	(revision 17275dca8192a7c86ca009c1ae42c41b6cdd6874)
 @@ -0,0 +1,28 @@
 +WSP properties are described in a number of sections in the MS-WSP protocol document. The document says that all properties are categorised as follows
 +
@@ -4871,8 +7112,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/librpc/wsp/allprops-from-msdn-wsp.csv b/librpc/wsp/allprops-from-msdn-wsp.csv
 new file mode 100644
---- /dev/null	(revision 182fea0c88f1440fdcf45c35183b0069efa7d0e6)
-+++ b/librpc/wsp/allprops-from-msdn-wsp.csv	(revision 182fea0c88f1440fdcf45c35183b0069efa7d0e6)
+--- /dev/null	(revision 17275dca8192a7c86ca009c1ae42c41b6cdd6874)
++++ b/librpc/wsp/allprops-from-msdn-wsp.csv	(revision 17275dca8192a7c86ca009c1ae42c41b6cdd6874)
 @@ -0,0 +1,379 @@
 +#Property Name,GUID,propID,inInvertedIndex,isColumn,columnIndexType,type,MaxSize,Vector Property,Description
 +System.AcquisitionID,{65A98875-3C80-40AB-ABBC-EFDAF77DBEE2},100,FALSE,TRUE, ,Int32,4, ,Hash to determine acquisition session.
@@ -5260,8 +7501,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/librpc/wsp/extra-props.csv b/librpc/wsp/extra-props.csv
 new file mode 100644
---- /dev/null	(revision 182fea0c88f1440fdcf45c35183b0069efa7d0e6)
-+++ b/librpc/wsp/extra-props.csv	(revision 182fea0c88f1440fdcf45c35183b0069efa7d0e6)
+--- /dev/null	(revision 17275dca8192a7c86ca009c1ae42c41b6cdd6874)
++++ b/librpc/wsp/extra-props.csv	(revision 17275dca8192a7c86ca009c1ae42c41b6cdd6874)
 @@ -0,0 +1,44 @@
 +DBPROP_CI_CATALOG_NAME,{a9bd1526-6a80-11d0-8c9d-0020af1d740e},2,FALSE,FALSE,,String,,,
 +DBPROP_CI_INCLUDE_SCOPES,{a9bd1526-6a80-11d0-8c9d-0020af1d740e},3,FALSE,FALSE,,String,,TRUE,
@@ -5314,8 +7555,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source4/scripting/bin/gen_wsp_props.py b/source4/scripting/bin/gen_wsp_props.py
 new file mode 100755
---- /dev/null	(revision 182fea0c88f1440fdcf45c35183b0069efa7d0e6)
-+++ b/source4/scripting/bin/gen_wsp_props.py	(revision 182fea0c88f1440fdcf45c35183b0069efa7d0e6)
+--- /dev/null	(revision 17275dca8192a7c86ca009c1ae42c41b6cdd6874)
++++ b/source4/scripting/bin/gen_wsp_props.py	(revision 17275dca8192a7c86ca009c1ae42c41b6cdd6874)
 @@ -0,0 +1,203 @@
 +#!/usr/bin/env python
 +#
@@ -5527,8 +7768,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/docs-xml/smbdotconf/misc/wspproperties.xml b/docs-xml/smbdotconf/misc/wspproperties.xml
 new file mode 100644
---- /dev/null	(revision 26b6fe7d859b427c0075f252ea23b12f9d582ff1)
-+++ b/docs-xml/smbdotconf/misc/wspproperties.xml	(revision 26b6fe7d859b427c0075f252ea23b12f9d582ff1)
+--- /dev/null	(revision 925aa419f46e60afd55a95ce6f1e6505e2c6b7e5)
++++ b/docs-xml/smbdotconf/misc/wspproperties.xml	(revision 925aa419f46e60afd55a95ce6f1e6505e2c6b7e5)
 @@ -0,0 +1,14 @@
 +<samba:parameter name="wsp property file"
 +                 context="G"
@@ -5551,8 +7792,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/librpc/wsp/wsp_restriction.c b/librpc/wsp/wsp_restriction.c
 new file mode 100644
---- /dev/null	(revision 8ca31d329a653f01ca0721f38f5f699ed2b0215b)
-+++ b/librpc/wsp/wsp_restriction.c	(revision 8ca31d329a653f01ca0721f38f5f699ed2b0215b)
+--- /dev/null	(revision ac21578e95e985b84f1db1d18cbebc58180c7a73)
++++ b/librpc/wsp/wsp_restriction.c	(revision ac21578e95e985b84f1db1d18cbebc58180c7a73)
 @@ -0,0 +1,720 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -6281,8 +8522,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/libcli/wsp/wscript_build b/libcli/wsp/wscript_build
 new file mode 100644
---- /dev/null	(revision c96482819b5bf3fa7ebf1547d81e3e5e5f7134c1)
-+++ b/libcli/wsp/wscript_build	(revision c96482819b5bf3fa7ebf1547d81e3e5e5f7134c1)
+--- /dev/null	(revision f9710e9c938d23902afc6f5324a15281e8da09c0)
++++ b/libcli/wsp/wscript_build	(revision f9710e9c938d23902afc6f5324a15281e8da09c0)
 @@ -0,0 +1,23 @@
 +#!/usr/bin/env python
 +
@@ -6314,8 +8555,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/libcli/wsp/wsp_aqs.c b/libcli/wsp/wsp_aqs.c
 new file mode 100644
---- /dev/null	(revision b10d35e34c5f39a3496307f4d16f8ce32329a57c)
-+++ b/libcli/wsp/wsp_aqs.c	(revision b10d35e34c5f39a3496307f4d16f8ce32329a57c)
+--- /dev/null	(revision dea835eb6735286d1a385ca647a6aa931fa1bcea)
++++ b/libcli/wsp/wsp_aqs.c	(revision dea835eb6735286d1a385ca647a6aa931fa1bcea)
 @@ -0,0 +1,801 @@
 +/*
 + *  Window Search Service
@@ -7125,8 +9366,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/libcli/wsp/wsp_aqs.h b/libcli/wsp/wsp_aqs.h
 new file mode 100644
---- /dev/null	(revision b10d35e34c5f39a3496307f4d16f8ce32329a57c)
-+++ b/libcli/wsp/wsp_aqs.h	(revision b10d35e34c5f39a3496307f4d16f8ce32329a57c)
+--- /dev/null	(revision dea835eb6735286d1a385ca647a6aa931fa1bcea)
++++ b/libcli/wsp/wsp_aqs.h	(revision dea835eb6735286d1a385ca647a6aa931fa1bcea)
 @@ -0,0 +1,166 @@
 +/*
 + *  Window Search Service
@@ -7301,8 +9542,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/libcli/wsp/wsp_aqs_lexer.l b/libcli/wsp/wsp_aqs_lexer.l
 new file mode 100644
---- /dev/null	(revision b10d35e34c5f39a3496307f4d16f8ce32329a57c)
-+++ b/libcli/wsp/wsp_aqs_lexer.l	(revision b10d35e34c5f39a3496307f4d16f8ce32329a57c)
+--- /dev/null	(revision dea835eb6735286d1a385ca647a6aa931fa1bcea)
++++ b/libcli/wsp/wsp_aqs_lexer.l	(revision dea835eb6735286d1a385ca647a6aa931fa1bcea)
 @@ -0,0 +1,152 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -7463,8 +9704,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/libcli/wsp/wsp_aqs_parser.y b/libcli/wsp/wsp_aqs_parser.y
 new file mode 100644
---- /dev/null	(revision b10d35e34c5f39a3496307f4d16f8ce32329a57c)
-+++ b/libcli/wsp/wsp_aqs_parser.y	(revision b10d35e34c5f39a3496307f4d16f8ce32329a57c)
+--- /dev/null	(revision dea835eb6735286d1a385ca647a6aa931fa1bcea)
++++ b/libcli/wsp/wsp_aqs_parser.y	(revision dea835eb6735286d1a385ca647a6aa931fa1bcea)
 @@ -0,0 +1,422 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -7895,8 +10136,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/libcli/wsp/test_wsp_parser.c b/libcli/wsp/test_wsp_parser.c
 new file mode 100644
---- /dev/null	(revision 46f9a883dd0e843b56e10bc92df80c49005e2ffb)
-+++ b/libcli/wsp/test_wsp_parser.c	(revision 46f9a883dd0e843b56e10bc92df80c49005e2ffb)
+--- /dev/null	(revision 0775050afa1ae3e865499e205b1913e79b3452bf)
++++ b/libcli/wsp/test_wsp_parser.c	(revision 0775050afa1ae3e865499e205b1913e79b3452bf)
 @@ -0,0 +1,391 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -8295,8 +10536,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/selftest/tests.py b/selftest/tests.py
---- a/selftest/tests.py	(revision 09f7062a721d475548197d6637bdc82e35d92c25)
-+++ b/selftest/tests.py	(revision 46f9a883dd0e843b56e10bc92df80c49005e2ffb)
+--- a/selftest/tests.py	(revision cbaac4b0e24a1935603e8dbbd9b99093cf1bfb5a)
++++ b/selftest/tests.py	(revision 0775050afa1ae3e865499e205b1913e79b3452bf)
 @@ -49,6 +49,7 @@
  pam_set_items_so_path = config_hash.get("PAM_SET_ITEMS_SO_PATH")
  have_heimdal_support = "SAMBA4_USES_HEIMDAL" in config_hash
@@ -8322,8 +10563,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/libcli/wsp/wsp_cli.c b/libcli/wsp/wsp_cli.c
 new file mode 100644
---- /dev/null	(revision da3cee0281154e79c9bc108bd871ee30fe5916d1)
-+++ b/libcli/wsp/wsp_cli.c	(revision da3cee0281154e79c9bc108bd871ee30fe5916d1)
+--- /dev/null	(revision b15104520e3376b1a5650f9bf8a7b921b4057e36)
++++ b/libcli/wsp/wsp_cli.c	(revision b15104520e3376b1a5650f9bf8a7b921b4057e36)
 @@ -0,0 +1,2234 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -10566,8 +12807,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/libcli/wsp/wsp_cli.h b/libcli/wsp/wsp_cli.h
 new file mode 100644
---- /dev/null	(revision c96482819b5bf3fa7ebf1547d81e3e5e5f7134c1)
-+++ b/libcli/wsp/wsp_cli.h	(revision c96482819b5bf3fa7ebf1547d81e3e5e5f7134c1)
+--- /dev/null	(revision f9710e9c938d23902afc6f5324a15281e8da09c0)
++++ b/libcli/wsp/wsp_cli.h	(revision f9710e9c938d23902afc6f5324a15281e8da09c0)
 @@ -0,0 +1,118 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -10693,8 +12934,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source3/utils/wscript_build b/source3/utils/wscript_build
---- a/source3/utils/wscript_build	(revision c96482819b5bf3fa7ebf1547d81e3e5e5f7134c1)
-+++ b/source3/utils/wscript_build	(revision 337ba7d45c13398168d4af5abcc3457a42dc9aa3)
+--- a/source3/utils/wscript_build	(revision f9710e9c938d23902afc6f5324a15281e8da09c0)
++++ b/source3/utils/wscript_build	(revision e11e82a3329e86e3e4cc385fac990eb30a90d20d)
 @@ -344,6 +344,12 @@
                   mdssvc
                   ''')
@@ -10715,9 +12956,9 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source3/utils/wspsearch.c b/source3/utils/wspsearch.c
 new file mode 100644
---- /dev/null	(revision e59afb1bf80bc428367531e83354bc737f8aa402)
-+++ b/source3/utils/wspsearch.c	(revision e59afb1bf80bc428367531e83354bc737f8aa402)
-@@ -0,0 +1,777 @@
+--- /dev/null	(revision cc57011541d90def8894375a17a5a92c6d7e7c53)
++++ b/source3/utils/wspsearch.c	(revision cc57011541d90def8894375a17a5a92c6d7e7c53)
+@@ -0,0 +1,785 @@
 +/*
 + *  Unix SMB/CIFS implementation.
 + *
@@ -11086,10 +13327,11 @@ new file mode 100644
 +	uint32_t rows_printed;
 +	uint32_t current_row = 0;
 +	TALLOC_CTX *row_ctx;
++	bool loop_again;
 +
 +	do {
 +		struct wsp_cpmgetrowsin *getrows = NULL;
-+		row_ctx = talloc_new(ctx);
++		row_ctx = talloc_new(NULL);
 +		if (!row_ctx) {
 +			status = NT_STATUS_UNSUCCESSFUL;
 +			goto out;
@@ -11169,6 +13411,13 @@ new file mode 100644
 +			current_row += rows_printed;
 +			data_blob_free(&unread);
 +		}
++
++		/*
++		 * response is a talloc child of row_ctz so we need to
++		 * assign loop_again before we delete row_ctx
++		 */
++		loop_again = response->message.cpmgetrows.rowsreturned;
++
 +		TALLOC_FREE(row_ctx);
 +		if (nrows && total_rows > nrows) {
 +			DBG_ERR("Something is wrong, results returned %d "
@@ -11177,7 +13426,7 @@ new file mode 100644
 +			status = NT_STATUS_UNSUCCESSFUL;
 +			goto out;
 +		}
-+	} while (response->message.cpmgetrows.rowsreturned);
++	} while (loop_again);
 +out:
 +	data_blob_free(&unread);
 +	TALLOC_FREE(row_ctx);
@@ -11502,8 +13751,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/docs-xml/manpages/wspsearch.1.xml b/docs-xml/manpages/wspsearch.1.xml
 new file mode 100644
---- /dev/null	(revision d429c8381e6af7d45f8545584d60bbb8dfc5ecab)
-+++ b/docs-xml/manpages/wspsearch.1.xml	(revision d429c8381e6af7d45f8545584d60bbb8dfc5ecab)
+--- /dev/null	(revision 2708908847f83f194da8a7c775848a7aca51e495)
++++ b/docs-xml/manpages/wspsearch.1.xml	(revision 2708908847f83f194da8a7c775848a7aca51e495)
 @@ -0,0 +1,190 @@
 +<?xml version="1.0" encoding="iso-8859-1"?>
 +<!DOCTYPE refentry PUBLIC "-//Samba-Team//DTD DocBook V4.2-Based Variant V1.0//EN" "http://www.samba.org/samba/DTD/samba-doc">
@@ -11702,8 +13951,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source3/rpc_server/rawpipe.c b/source3/rpc_server/rawpipe.c
 new file mode 100644
---- /dev/null	(revision e61c4dc921fe1fe630c04127a2d60edddb75e76a)
-+++ b/source3/rpc_server/rawpipe.c	(revision e61c4dc921fe1fe630c04127a2d60edddb75e76a)
+--- /dev/null	(revision fa4420bffda7a92534d863d700298cc9ee9c197b)
++++ b/source3/rpc_server/rawpipe.c	(revision fa4420bffda7a92534d863d700298cc9ee9c197b)
 @@ -0,0 +1,181 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -11893,8 +14142,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source3/rpc_server/rawpipe.h b/source3/rpc_server/rawpipe.h
 new file mode 100644
---- /dev/null	(revision e61c4dc921fe1fe630c04127a2d60edddb75e76a)
-+++ b/source3/rpc_server/rawpipe.h	(revision e61c4dc921fe1fe630c04127a2d60edddb75e76a)
+--- /dev/null	(revision fa4420bffda7a92534d863d700298cc9ee9c197b)
++++ b/source3/rpc_server/rawpipe.h	(revision fa4420bffda7a92534d863d700298cc9ee9c197b)
 @@ -0,0 +1,51 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -11953,8 +14202,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source3/rpc_server/wscript_build b/source3/rpc_server/wscript_build
---- a/source3/rpc_server/wscript_build	(revision d429c8381e6af7d45f8545584d60bbb8dfc5ecab)
-+++ b/source3/rpc_server/wscript_build	(revision 4d597c209e8444a4ef0423e5d29f6752d29a340e)
+--- a/source3/rpc_server/wscript_build	(revision 2708908847f83f194da8a7c775848a7aca51e495)
++++ b/source3/rpc_server/wscript_build	(revision 0ac4e96e078c8fd69d1bf8bba176aaf9beb593df)
 @@ -1,6 +1,14 @@
  #!/usr/bin/env python
  
@@ -12031,8 +14280,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/librpc/idl/rawpipe.idl b/librpc/idl/rawpipe.idl
 new file mode 100644
---- /dev/null	(revision 796ad7e94bdba6600622fd172f09c856392ba417)
-+++ b/librpc/idl/rawpipe.idl	(revision 796ad7e94bdba6600622fd172f09c856392ba417)
+--- /dev/null	(revision 83625e0f5a49c15348dcdbf983e1294cd23e51bb)
++++ b/librpc/idl/rawpipe.idl	(revision 83625e0f5a49c15348dcdbf983e1294cd23e51bb)
 @@ -0,0 +1,16 @@
 +#include "idl_types.h"
 +
@@ -12056,8 +14305,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source4/librpc/wscript_build b/source4/librpc/wscript_build
---- a/source4/librpc/wscript_build	(revision e61c4dc921fe1fe630c04127a2d60edddb75e76a)
-+++ b/source4/librpc/wscript_build	(revision 796ad7e94bdba6600622fd172f09c856392ba417)
+--- a/source4/librpc/wscript_build	(revision fa4420bffda7a92534d863d700298cc9ee9c197b)
++++ b/source4/librpc/wscript_build	(revision 83625e0f5a49c15348dcdbf983e1294cd23e51bb)
 @@ -132,6 +132,7 @@
                      NDR_SECRETS
                      NDR_LEASES_DB
@@ -12073,8 +14322,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source3/rpc_server/rawpipe_loop.c b/source3/rpc_server/rawpipe_loop.c
 new file mode 100644
---- /dev/null	(revision 294c867e9f73b48b5d95fbb3d8cd32ca9b4d7391)
-+++ b/source3/rpc_server/rawpipe_loop.c	(revision 294c867e9f73b48b5d95fbb3d8cd32ca9b4d7391)
+--- /dev/null	(revision 60c064eb9dfb87bc7e4b8a5f87cbc62a08937db7)
++++ b/source3/rpc_server/rawpipe_loop.c	(revision 60c064eb9dfb87bc7e4b8a5f87cbc62a08937db7)
 @@ -0,0 +1,780 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -12863,8 +15112,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source3/rpc_server/rawpipe_loop.h b/source3/rpc_server/rawpipe_loop.h
 new file mode 100644
---- /dev/null	(revision 396dde31b208963ed413f51b27c3ded423f7466a)
-+++ b/source3/rpc_server/rawpipe_loop.h	(revision 396dde31b208963ed413f51b27c3ded423f7466a)
+--- /dev/null	(revision b5f2bbfcf4a2d2813a975e85ac98f22e5f35fe3e)
++++ b/source3/rpc_server/rawpipe_loop.h	(revision b5f2bbfcf4a2d2813a975e85ac98f22e5f35fe3e)
 @@ -0,0 +1,56 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -12929,8 +15178,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source3/rpc_server/rawpiped.c b/source3/rpc_server/rawpiped.c
 new file mode 100644
---- /dev/null	(revision f36fa810e8da35720f561592d64838939453f0f5)
-+++ b/source3/rpc_server/rawpiped.c	(revision f36fa810e8da35720f561592d64838939453f0f5)
+--- /dev/null	(revision 28eb4f40197520c5f2edf1d0c202a1b38d129b4c)
++++ b/source3/rpc_server/rawpiped.c	(revision 28eb4f40197520c5f2edf1d0c202a1b38d129b4c)
 @@ -0,0 +1,382 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -13320,8 +15569,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source3/smbd/server.c b/source3/smbd/server.c
---- a/source3/smbd/server.c	(revision 268f0fd72c44b414091d8a7c6243e0b2dd340028)
-+++ b/source3/smbd/server.c	(revision 6a942a72ac1903484ebf27d1a38813aec9c2df9c)
+--- a/source3/smbd/server.c	(revision c6e9f6c2d9f4b32bd40ebdb715094b87c86e20f3)
++++ b/source3/smbd/server.c	(revision 43af1590ac9ac23cf49e5aa32a2e9ba4b9ec4815)
 @@ -62,6 +62,77 @@
  #include "ctdb_protocol.h"
  #endif
@@ -13420,8 +15669,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source4/selftest/tests.py b/source4/selftest/tests.py
---- a/source4/selftest/tests.py	(revision 71abff25c80eef98d8af26d08cbaf44240323d9e)
-+++ b/source4/selftest/tests.py	(revision 35a1dc100e6e21c59af4197610a257443a0cb425)
+--- a/source4/selftest/tests.py	(revision d1df337a8fa79b35545fad312b636ac206859d26)
++++ b/source4/selftest/tests.py	(revision ef5808a8692a068a0fef27413fe3dcc4ce9019f9)
 @@ -254,6 +254,8 @@
              env = "ad_dc_ntvfs"
          elif t == "rpc.join":
@@ -13438,8 +15687,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source4/torture/rpc/rawpipe.c b/source4/torture/rpc/rawpipe.c
 new file mode 100644
---- /dev/null	(revision 35a1dc100e6e21c59af4197610a257443a0cb425)
-+++ b/source4/torture/rpc/rawpipe.c	(revision 35a1dc100e6e21c59af4197610a257443a0cb425)
+--- /dev/null	(revision ef5808a8692a068a0fef27413fe3dcc4ce9019f9)
++++ b/source4/torture/rpc/rawpipe.c	(revision ef5808a8692a068a0fef27413fe3dcc4ce9019f9)
 @@ -0,0 +1,240 @@
 +/*
 +   Unix SMB/CIFS implementation.
@@ -13687,8 +15936,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source4/torture/rpc/rpc.c b/source4/torture/rpc/rpc.c
---- a/source4/torture/rpc/rpc.c	(revision 71abff25c80eef98d8af26d08cbaf44240323d9e)
-+++ b/source4/torture/rpc/rpc.c	(revision 35a1dc100e6e21c59af4197610a257443a0cb425)
+--- a/source4/torture/rpc/rpc.c	(revision d1df337a8fa79b35545fad312b636ac206859d26)
++++ b/source4/torture/rpc/rpc.c	(revision ef5808a8692a068a0fef27413fe3dcc4ce9019f9)
 @@ -572,6 +572,7 @@
  	ndr_table_init();
  
@@ -13697,38 +15946,14 @@ diff --git a/source4/torture/rpc/rpc.c b/source4/torture/rpc/rpc.c
  	torture_suite_add_simple_test(suite, "lsalookup", torture_rpc_lsa_lookup);
  	torture_suite_add_simple_test(suite, "lsa-getuser", torture_rpc_lsa_get_user);
  	torture_suite_add_suite(suite, torture_rpc_lsa_lookup_sids(suite));
-Index: source4/torture/wscript_build
-IDEA additional info:
-Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
-<+>UTF-8
-===================================================================
-diff --git a/source4/torture/wscript_build b/source4/torture/wscript_build
---- a/source4/torture/wscript_build	(revision 71abff25c80eef98d8af26d08cbaf44240323d9e)
-+++ b/source4/torture/wscript_build	(revision 35a1dc100e6e21c59af4197610a257443a0cb425)
-@@ -97,6 +97,7 @@
-                         rpc/drsuapi_w2k8.c
-                         rpc/drsuapi_cracknames.c
-                         rpc/dsgetinfo.c
-+                        rpc/rawpipe.c
-                         rpc/spoolss.c
-                         rpc/spoolss_win.c
-                         rpc/spoolss_access.c
-@@ -192,6 +193,7 @@
-                       printer_driver
-                       RPC_NDR_MDSSVC
-                       mdssvc
-+                      tstream_binding_handle
-                       ''' % samba_net + ntvfs_specific['deps'],
-                  internal_module=True,
-                  enabled=bld.PYTHON_BUILD_IS_ENABLED())
 Index: source3/smbd/smb1_ipc.c
 IDEA additional info:
 Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source3/smbd/smb1_ipc.c b/source3/smbd/smb1_ipc.c
---- a/source3/smbd/smb1_ipc.c	(revision 35a1dc100e6e21c59af4197610a257443a0cb425)
-+++ b/source3/smbd/smb1_ipc.c	(revision 5825b1b99c11102b659f6a56b528e38cce313aaf)
+--- a/source3/smbd/smb1_ipc.c	(revision ef5808a8692a068a0fef27413fe3dcc4ce9019f9)
++++ b/source3/smbd/smb1_ipc.c	(revision 242daa521a9b7602375c5c5e2e01ad02c1cb7a4a)
 @@ -543,6 +543,7 @@
  	    strequal(name,"SRVSVC") ||
  	    strequal(name,"WINREG") ||
@@ -13743,8 +15968,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source3/smbd/smb2_ioctl_named_pipe.c b/source3/smbd/smb2_ioctl_named_pipe.c
---- a/source3/smbd/smb2_ioctl_named_pipe.c	(revision 5825b1b99c11102b659f6a56b528e38cce313aaf)
-+++ b/source3/smbd/smb2_ioctl_named_pipe.c	(revision f62bae8897439a4d50b3b391229510c5d9880d5b)
+--- a/source3/smbd/smb2_ioctl_named_pipe.c	(revision 242daa521a9b7602375c5c5e2e01ad02c1cb7a4a)
++++ b/source3/smbd/smb2_ioctl_named_pipe.c	(revision f7fecc7a67b7f28c85ba9a0e521439093e860336)
 @@ -26,6 +26,7 @@
  #include "rpc_server/srv_pipe_hnd.h"
  #include "include/ntioctl.h"
@@ -13820,8 +16045,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/docs-xml/smbdotconf/misc/wsp_backend.xml b/docs-xml/smbdotconf/misc/wsp_backend.xml
 new file mode 100644
---- /dev/null	(revision 25b708d214e4ab87ca41ed8a413c877ea8ea4862)
-+++ b/docs-xml/smbdotconf/misc/wsp_backend.xml	(revision 25b708d214e4ab87ca41ed8a413c877ea8ea4862)
+--- /dev/null	(revision 3e1df00c319006e4d0b2934c4d2cb90649e7ed71)
++++ b/docs-xml/smbdotconf/misc/wsp_backend.xml	(revision 3e1df00c319006e4d0b2934c4d2cb90649e7ed71)
 @@ -0,0 +1,23 @@
 +docs-xml/smbdotconf/misc/wsp_backend.xml
 +<samba:parameter name="wsp backend"
@@ -13853,8 +16078,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/docs-xml/smbdotconf/misc/wspenable.xml b/docs-xml/smbdotconf/misc/wspenable.xml
 new file mode 100644
---- /dev/null	(revision 2e536078e73e1f9e5de3b35bd8ef1f6eedfdf620)
-+++ b/docs-xml/smbdotconf/misc/wspenable.xml	(revision 2e536078e73e1f9e5de3b35bd8ef1f6eedfdf620)
+--- /dev/null	(revision 0dcc75d4492f3f59140be8984e4c03993a9440f9)
++++ b/docs-xml/smbdotconf/misc/wspenable.xml	(revision 0dcc75d4492f3f59140be8984e4c03993a9440f9)
 @@ -0,0 +1,43 @@
 +<samba:parameter name="wsp"
 +		 context="S"
@@ -13906,8 +16131,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/docs-xml/smbdotconf/misc/wspresultlimit.xml b/docs-xml/smbdotconf/misc/wspresultlimit.xml
 new file mode 100644
---- /dev/null	(revision 2e536078e73e1f9e5de3b35bd8ef1f6eedfdf620)
-+++ b/docs-xml/smbdotconf/misc/wspresultlimit.xml	(revision 2e536078e73e1f9e5de3b35bd8ef1f6eedfdf620)
+--- /dev/null	(revision 0dcc75d4492f3f59140be8984e4c03993a9440f9)
++++ b/docs-xml/smbdotconf/misc/wspresultlimit.xml	(revision 0dcc75d4492f3f59140be8984e4c03993a9440f9)
 @@ -0,0 +1,12 @@
 +<samba:parameter name="wsp result limit"
 +		 context="G"
@@ -13927,8 +16152,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/lib/param/loadparm.h b/lib/param/loadparm.h
---- a/lib/param/loadparm.h	(revision 854455e0ac9ea07e5ae5ab224faedf9912d1820b)
-+++ b/lib/param/loadparm.h	(revision 25b708d214e4ab87ca41ed8a413c877ea8ea4862)
+--- a/lib/param/loadparm.h	(revision 0995503ecdea7b0d25403c74c933048f671d2786)
++++ b/lib/param/loadparm.h	(revision 3e1df00c319006e4d0b2934c4d2cb90649e7ed71)
 @@ -269,6 +269,12 @@
  	NT_HASH_STORE_ALWAYS
  };
@@ -13948,8 +16173,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/lib/param/param_table.c b/lib/param/param_table.c
---- a/lib/param/param_table.c	(revision 854455e0ac9ea07e5ae5ab224faedf9912d1820b)
-+++ b/lib/param/param_table.c	(revision 25b708d214e4ab87ca41ed8a413c877ea8ea4862)
+--- a/lib/param/param_table.c	(revision 0995503ecdea7b0d25403c74c933048f671d2786)
++++ b/lib/param/param_table.c	(revision 3e1df00c319006e4d0b2934c4d2cb90649e7ed71)
 @@ -417,6 +417,11 @@
  	{-1, NULL}
  };
@@ -13968,8 +16193,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source3/param/loadparm.c b/source3/param/loadparm.c
---- a/source3/param/loadparm.c	(revision 854455e0ac9ea07e5ae5ab224faedf9912d1820b)
-+++ b/source3/param/loadparm.c	(revision 2e536078e73e1f9e5de3b35bd8ef1f6eedfdf620)
+--- a/source3/param/loadparm.c	(revision 0995503ecdea7b0d25403c74c933048f671d2786)
++++ b/source3/param/loadparm.c	(revision 0dcc75d4492f3f59140be8984e4c03993a9440f9)
 @@ -190,6 +190,7 @@
  	.available = true,
  	.read_only = true,
@@ -13985,8 +16210,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source3/rpc_server/wsp/wsp_abs_if.h b/source3/rpc_server/wsp/wsp_abs_if.h
 new file mode 100644
---- /dev/null	(revision 15d3b9875634b121172aa3e6a0fbbb5e22cb1e51)
-+++ b/source3/rpc_server/wsp/wsp_abs_if.h	(revision 15d3b9875634b121172aa3e6a0fbbb5e22cb1e51)
+--- /dev/null	(revision 026f1903e8944061810a64408dbcf6ea06109b4b)
++++ b/source3/rpc_server/wsp/wsp_abs_if.h	(revision 026f1903e8944061810a64408dbcf6ea06109b4b)
 @@ -0,0 +1,345 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -14340,8 +16565,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source3/rpc_server/wsp/wsp_backend.c b/source3/rpc_server/wsp/wsp_backend.c
 new file mode 100644
---- /dev/null	(revision d7f835782f319c491dea4769435a030adc30d586)
-+++ b/source3/rpc_server/wsp/wsp_backend.c	(revision d7f835782f319c491dea4769435a030adc30d586)
+--- /dev/null	(revision 8e8632781e1bfeb695f6a55258330e5c1674fc2a)
++++ b/source3/rpc_server/wsp/wsp_backend.c	(revision 8e8632781e1bfeb695f6a55258330e5c1674fc2a)
 @@ -0,0 +1,139 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -14489,8 +16714,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source3/rpc_server/wsp/wsp_backend.h b/source3/rpc_server/wsp/wsp_backend.h
 new file mode 100644
---- /dev/null	(revision d7f835782f319c491dea4769435a030adc30d586)
-+++ b/source3/rpc_server/wsp/wsp_backend.h	(revision d7f835782f319c491dea4769435a030adc30d586)
+--- /dev/null	(revision 8e8632781e1bfeb695f6a55258330e5c1674fc2a)
++++ b/source3/rpc_server/wsp/wsp_backend.h	(revision 8e8632781e1bfeb695f6a55258330e5c1674fc2a)
 @@ -0,0 +1,187 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -14686,8 +16911,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source3/utils/wsp-to.c b/source3/utils/wsp-to.c
 new file mode 100644
---- /dev/null	(revision 3072dbdf120fa7f5fea211d438227dd23c37f922)
-+++ b/source3/utils/wsp-to.c	(revision 3072dbdf120fa7f5fea211d438227dd23c37f922)
+--- /dev/null	(revision 12afb63a33669d087c942c42a7994b5c5623bcb4)
++++ b/source3/utils/wsp-to.c	(revision 12afb63a33669d087c942c42a7994b5c5623bcb4)
 @@ -0,0 +1,378 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -15073,8 +17298,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source3/wscript_build b/source3/wscript_build
---- a/source3/wscript_build	(revision d7f835782f319c491dea4769435a030adc30d586)
-+++ b/source3/wscript_build	(revision 0fed2db35f191854ec74dc43a32accdf3963155d)
+--- a/source3/wscript_build	(revision 8e8632781e1bfeb695f6a55258330e5c1674fc2a)
++++ b/source3/wscript_build	(revision 9f169e838933939fcb8559e6c9a417462a67d54f)
 @@ -1197,6 +1197,17 @@
                   ''',
                   enabled=bld.env.spotlight_backend_es,
@@ -15100,8 +17325,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source3/rpc_server/wsp/elasticsearch_mappings.json b/source3/rpc_server/wsp/elasticsearch_mappings.json
 new file mode 100644
---- /dev/null	(revision d034306678b49d3e82483714b7c13382cfffe278)
-+++ b/source3/rpc_server/wsp/elasticsearch_mappings.json	(revision d034306678b49d3e82483714b7c13382cfffe278)
+--- /dev/null	(revision 15ef7e86a635df8db72029f7efeb10b976489bd8)
++++ b/source3/rpc_server/wsp/elasticsearch_mappings.json	(revision 15ef7e86a635df8db72029f7efeb10b976489bd8)
 @@ -0,0 +1,187 @@
 +{
 +    "attribute_mappings": {
@@ -15297,8 +17522,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source3/rpc_server/wsp/wsp_es_conv.c b/source3/rpc_server/wsp/wsp_es_conv.c
 new file mode 100644
---- /dev/null	(revision 73f55fb3d97d0ccd67e24c511f85c871950a75aa)
-+++ b/source3/rpc_server/wsp/wsp_es_conv.c	(revision 73f55fb3d97d0ccd67e24c511f85c871950a75aa)
+--- /dev/null	(revision a537236aee3a10e3e2320db6f54f5d78cf1226ab)
++++ b/source3/rpc_server/wsp/wsp_es_conv.c	(revision a537236aee3a10e3e2320db6f54f5d78cf1226ab)
 @@ -0,0 +1,2451 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -17758,8 +19983,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source3/rpc_server/wsp/wsp_es_conv.h b/source3/rpc_server/wsp/wsp_es_conv.h
 new file mode 100644
---- /dev/null	(revision 14580a51767cc9778882946f1dadd85a945d3a8b)
-+++ b/source3/rpc_server/wsp/wsp_es_conv.h	(revision 14580a51767cc9778882946f1dadd85a945d3a8b)
+--- /dev/null	(revision 50fb28e47e9801acd7ee1eebc29620a25373e91f)
++++ b/source3/rpc_server/wsp/wsp_es_conv.h	(revision 50fb28e47e9801acd7ee1eebc29620a25373e91f)
 @@ -0,0 +1,35 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -17803,8 +20028,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source3/rpc_server/wsp/wsp_gss.c b/source3/rpc_server/wsp/wsp_gss.c
 new file mode 100644
---- /dev/null	(revision 372c3fac78bdf6b71ea717dbf191e53f9a899fe8)
-+++ b/source3/rpc_server/wsp/wsp_gss.c	(revision 372c3fac78bdf6b71ea717dbf191e53f9a899fe8)
+--- /dev/null	(revision 10506e8b09fda98583753213f178e42047c97f12)
++++ b/source3/rpc_server/wsp/wsp_gss.c	(revision 10506e8b09fda98583753213f178e42047c97f12)
 @@ -0,0 +1,3368 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -21181,8 +23406,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source3/rpc_server/wsp/wsp_gss.h b/source3/rpc_server/wsp/wsp_gss.h
 new file mode 100644
---- /dev/null	(revision 7145bda64dc97128f9580c727c8b8ae636c878fe)
-+++ b/source3/rpc_server/wsp/wsp_gss.h	(revision 7145bda64dc97128f9580c727c8b8ae636c878fe)
+--- /dev/null	(revision 97223e8f3b836803ca977071d2ede1b1fafb5604)
++++ b/source3/rpc_server/wsp/wsp_gss.h	(revision 97223e8f3b836803ca977071d2ede1b1fafb5604)
 @@ -0,0 +1,49 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -21239,8 +23464,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/libcli/http/http.c b/libcli/http/http.c
---- a/libcli/http/http.c	(revision a25ade0d532589b563d1598b2cd69a555caf95d3)
-+++ b/libcli/http/http.c	(revision 8a12e637e1f02633abfd2df86247ad4c6bdd86b7)
+--- a/libcli/http/http.c	(revision ac93b372b2ade9ffece56803c5acacc323180c49)
++++ b/libcli/http/http.c	(revision 5a87d5fde6238847cf484d5f6bd05b8a7f837d53)
 @@ -657,6 +657,9 @@
  	const char *method;
  
@@ -21258,8 +23483,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source3/rpc_server/wsp/wsp_es_abs_if.c b/source3/rpc_server/wsp/wsp_es_abs_if.c
 new file mode 100644
---- /dev/null	(revision 486b816bb0edc985afa711bbb6c835c6d0e74b17)
-+++ b/source3/rpc_server/wsp/wsp_es_abs_if.c	(revision 486b816bb0edc985afa711bbb6c835c6d0e74b17)
+--- /dev/null	(revision 1a1ce237f6b34d85642837f4e109f9c9b1bbc3fa)
++++ b/source3/rpc_server/wsp/wsp_es_abs_if.c	(revision 1a1ce237f6b34d85642837f4e109f9c9b1bbc3fa)
 @@ -0,0 +1,3326 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -24594,8 +26819,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source3/rpc_server/wsp/wsp_es_abs_if.h b/source3/rpc_server/wsp/wsp_es_abs_if.h
 new file mode 100644
---- /dev/null	(revision fad7d46c376aec89557d7274139614d996d904bf)
-+++ b/source3/rpc_server/wsp/wsp_es_abs_if.h	(revision fad7d46c376aec89557d7274139614d996d904bf)
+--- /dev/null	(revision 9b7b3d63d629ebf38fc3cbffde83be497452aea7)
++++ b/source3/rpc_server/wsp/wsp_es_abs_if.h	(revision 9b7b3d63d629ebf38fc3cbffde83be497452aea7)
 @@ -0,0 +1,25 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -24629,8 +26854,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 ===================================================================
 diff --git a/source3/rpc_server/wspd.c b/source3/rpc_server/wspd.c
 new file mode 100644
---- /dev/null	(revision e4dc1f0782e660c1ce40ca844196d165bd6624ff)
-+++ b/source3/rpc_server/wspd.c	(revision e4dc1f0782e660c1ce40ca844196d165bd6624ff)
+--- /dev/null	(revision 9dab4a5a3e6bc946a68b7b2c8e06a505000ccff3)
++++ b/source3/rpc_server/wspd.c	(revision 9dab4a5a3e6bc946a68b7b2c8e06a505000ccff3)
 @@ -0,0 +1,363 @@
 +/*
 + *  Unix SMB/CIFS implementation.
@@ -25001,8 +27226,8 @@ Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
 <+>UTF-8
 ===================================================================
 diff --git a/source3/libsmb/clientgen.c b/source3/libsmb/clientgen.c
---- a/source3/libsmb/clientgen.c	(revision 88da9d87b4be08dce890472a0accdacae5f028ee)
-+++ b/source3/libsmb/clientgen.c	(revision 7fb3df6e56fd0a35e431e11724a60751b0f8118a)
+--- a/source3/libsmb/clientgen.c	(revision db479edb65415d750cffc4a9e0b87cd5caed3936)
++++ b/source3/libsmb/clientgen.c	(revision 8c4ceb832ea50977e23211d51d655cd6024a57e7)
 @@ -61,7 +61,8 @@
  struct cli_state *cli_state_create(TALLOC_CTX *mem_ctx,
  				   int fd,

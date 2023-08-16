@@ -423,9 +423,6 @@ its indexing history and index everything again.
 
 The build process described below will build Debian packages for Bullseye with Samba 4.17.10
 
-The latest code from Noel Power is base on 4.17.9, however 4.17.9 is not compatible with Microsoft's July 2023 update, 
-and 4.18.5 has more differences in the source which does add to stability when applying the WSP patches. 
-Therefor the best option is 4.17.10 to get reasonably stable packages.
 
 DO NOTE that: the Linux utility `wspsearch` is broken in the current patch, it coredumps and cannot be used.   
 
