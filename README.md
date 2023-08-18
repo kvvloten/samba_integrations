@@ -121,6 +121,33 @@ Web interface to change in an LDAP directory.
 
 Setup details are in README [here](password_notifier/README.md) 
 
+## Spotlight for Samba fileserver
+
+Spotlight (Apple-search) for Samba
+
+```text
+  _____________   Spotlight     __________   Files,   ______________   Scan files    _____________ 
+ |             |  query        |          |  ACLs    | Filesystem   |  + meta data  |             |
+ |  Apple Mac  | ------------> |          | -------> |  File        | <------------ |  FScrawler  |   
+ |             |  Filesharing  |  Samba   |          |   +          |               |             |
+  -------------                |  file    |       +- |  ACL         |                -------------
+                               |  server  |       |   --------------                     | 
+                               |          |       |                                      | Create     
+                               |          | <-----+ Spotlight ACL info                   | documents
+                               |          |                                              V    
+                               |          |                 ______________          ______________ 
+                               |          | -------------> |  Anonymous   |        |              | 
+                                ----------  Spotlight      |  Opensearch  | -----> |  Opensearch  |
+                      User authnz |         query          |  proxy       |   +--- |  (Elastic7)  | 
+                                  V                         --------------    |     -------------- 
+                                _______________                               |    |              |
+                               |               | <----------------------------+    |  Opensearch  |
+                               |  Samba AD-DC  |   user authnz                     |  Dashboard   |
+                               |               |                       User -----> |  (Kibana)    |
+                                ---------------                        WebUI        --------------
+```
+
+Setup details are in README [here](samba_fileserver_spotlight/README.md) 
 
 ## Cron- and management scripts for Samba-AD controllers
 

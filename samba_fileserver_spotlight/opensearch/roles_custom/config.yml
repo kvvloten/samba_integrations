@@ -1,0 +1,84 @@
+---
+# This is the main OpenSearch Security configuration file where authentication
+# and authorization is defined.
+#
+# Variable substitution:
+#    {0} is substituted with the DN of the user.
+#    {1} is substituted with the user name, as defined by the username_attribute setting.
+#    {2} is substituted with an arbitrary attribute value from the authenticated user’s directory entry.
+
+_meta:
+  type: "config"
+  config_version: 2
+
+config:
+  dynamic:
+    kibana:
+      multitenancy_enabled: false
+      server_username: kibanaserver    
+    http:
+      anonymous_auth_enabled: false
+      xff:
+        enabled: false
+        remoteIpHeader: "x-forwarded-for"
+        internalProxies: '.*'
+    authc:
+      internal_authentication:
+        description: "Authenticate via HTTP Basic against internal users database"
+        http_enabled: true
+        transport_enabled: true
+        order: 1
+        http_authenticator:
+          type: basic
+          challenge: true
+        authentication_backend:
+          type: intern
+      ad_authentication:
+        description: "Authenticate via HTTP Basic against Active Directory"
+        http_enabled: true
+        transport_enabled: false
+        order: 2
+        http_authenticator:
+          type: basic
+          challenge: false
+        authentication_backend:
+          type: ldap
+          config:
+            # start_tls does not work in opensearch 2.4, workaround is enable_ssl 
+            enable_ssl: true
+            enable_start_tls: false
+            enable_ssl_client_auth: false
+            verify_hostnames: true
+            hosts: "ldap://<YOUR 1ST DC-SERVER>/ ldap://<YOUR 2ND DC-SERVER>/"
+            bind_dn: "<SERVICE-ACCOUNT DN>"
+            password: "<SERVICE-ACCOUNT PASSWORD>"
+            # Find account
+            userbase: "<BASE-DN OF YOUR USER-ACCOUNTS>"
+            usersearch: '(sAMAccountName={0})'
+            username_attribute: "sAMAccountName"
+    authz:
+      ad_roles:
+        description: "Authorize via Active Directory"
+        http_enabled: true
+        transport_enabled: false
+        authorization_backend:
+          type: ldap2
+          config:
+            # start_tls does not work in opensearch 2.4, workaround is enable_ssl 
+            enable_ssl: true
+            enable_start_tls: false
+            enable_ssl_client_auth: false
+            verify_hostnames: true
+            hosts: "ldap://<YOUR 1ST DC-SERVER>/ ldap://<YOUR 2ND DC-SERVER>/"
+            bind_dn: "<SERVICE-ACCOUNT DN>"
+            password: "<SERVICE-ACCOUNT PASSWORD>"
+            skip_users: ["admin", "kibana", "/^local_.+/"]
+            # Find account
+            userbase: "<BASE-DN OF YOUR USER-ACCOUNTS>"
+            usersearch: '(sAMAccountName={1})'
+            username_attribute: "sAMAccountName"
+            # Find role
+            rolebase: "<BASE-DN OF YOUR PERMISSION-GROUPS>"
+            rolesearch: '(member={0})'
+            resolve_nested_roles: true
+            max_nested_depth: 10

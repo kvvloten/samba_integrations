@@ -1,0 +1,56 @@
+---
+# Example config: https://github.com/opensearch-project/OpenSearch-Dashboards/blob/main/config/opensearch_dashboards.yml
+# OpenSearch Dashboards is served by a back end server. This setting specifies the port to use.
+server:
+  port: 5601
+  host: 127.0.0.1
+  name: "<HOSTNAME>"
+  ssl:
+    enabled: false
+
+  # Enables you to specify a path to mount OpenSearch Dashboards at if you are running behind a proxy.
+  # Use the `server.rewriteBasePath` setting to tell OpenSearch Dashboards if it should remove the basePath
+  # from requests it receives, and to prevent a deprecation warning at startup. This setting cannot end in a slash.
+  basePath: "/kibana"
+  # Specifies whether OpenSearch Dashboards should rewrite requests that are prefixed with
+  # `server.basePath` or require that they are rewritten by your reverse proxy.
+  rewriteBasePath: true
+
+  # SAML: https://opensearch.org/docs/latest/security/authentication-backends/saml/#opensearch-dashboards-configuration
+  #xsrf:
+  #  allowlist: ["/_plugins/_security/saml/acs", "/_opendistro/_security/saml/acs"]
+
+opensearch:
+  # The URLs of the OpenSearch instances to use for all your queries.
+  hosts: ["https://<OPENSEARCH-FQDN>:9200/"]
+  # If your OpenSearch is protected with basic authentication, these settings provide the username and password 
+  # that the OpenSearch Dashboards server uses to perform maintenance on the OpenSearch Dashboards index at startup
+  username: "kibanaserver"
+  password: "<OPENSEARCH-KIBANA-PW>"
+
+  # To disregard the validity of SSL certificates, change this setting's value to 'none'.
+  ssl:
+    verificationMode: full
+    certificateAuthorities: "/etc/ssl/certs/ca-certificates.crt" 
+  # Logs queries sent to OpenSearch. Requires logging.verbose set to true.
+  logQueries: false
+
+opensearch_security:
+  # https://opensearch.org/docs/latest/security/configuration/multi-auth/
+  auth:
+    multiple_auth_enabled: false
+  cookie:
+    secure: true
+  multitenancy:
+    enabled: false
+
+logging:
+  # Enables you to specify a file where OpenSearch Dashboards stores log output.
+  dest: "/var/log/opensearch-dashboards/dashboards.log"
+
+  # Set the value of this setting to true to suppress all logging output.
+  silent: false
+  # Set the value of this setting to true to suppress all logging output other than error messages.
+  quiet: false
+  # Set the value of this setting to true to log all events, including system usage information and all requests.
+  verbose: true
