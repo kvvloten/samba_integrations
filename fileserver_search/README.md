@@ -42,19 +42,29 @@ All together this is quite complex and hence not recommended without enough know
 
 Setup instructions are written for a Debian Bullseye server.
 
-Samba current does not have support for authentication to Opensearch. 
-An opensearch-proxy is setup which adds authentication over an encrypted connection. 
-Since it listens to localhost only, this is secure enough.
+Design decisions:
+- Security is part of the design and of the setup
+- Opensearch and Opensearch-dashboards are broader usable (not exclusively for the fileserver), therefore it should be installed on another machine
+- Opensearch is configured as a single node cluster
+- Daemons (e.g. FScrawler) should not run as `root` if possible
+- Filesystem permissions provide more fine-grained control on what can be accessed and indexed by FScrawler
+- Webapplications should run behind a reverse-proxy, for extra control on access
+- User access is based on RBAC and AD
+- The setup uses default settings with regards to performance and scalability 
 
 Assumptions:
 - A working Samba fileserver 
-- Another machine is available for setup of Opensearch
+- Another machine or container is available for setup of Opensearch
 - Apache2 is setup on the same server as Opensearch and has a TLS enabled vhost ready to use. 
 - A host X509 (server-) certificate and a key file for the Opensearch server
 - A X509 (client-) certificate and a key file for the Opensearch admin-user
 
+In case you want to use containers the to most logical choice is lxc-containers and for the fileserver that must be a privileged container.
 
-### Setup steps on Opensearch machine
+Samba current does not have support for authentication to Opensearch (which is required). 
+An opensearch-proxy is setup which adds authentication over an encrypted connection. Since it listens to localhost only, this is secure enough.
+
+### Setup steps on Opensearch machine (or container)
 
 On the Opensearch machine:
 - Install Opensearch and configure users and roles
@@ -234,7 +244,7 @@ rm /etc/init.d/opensearch-dashboards
 ```
 
 - Copy `opensearch_dashboards/opensearch_dashboards.yml` to `/etc/opensearch_dashboards/opensearch_dashboards.ym`
-- Edit: `/etc/opensearch_dashboards/opensearch_dashboards.ym`:
+- Edit: `/etc/opensearch_dashboards/opensearch_dashboards.yml`:
   - Replace `<HOSTNAME>`with the hostname
   - Replace `<OPENSEARCH-FQDN>` with the server-fqdn of the opensearch server
   - Replace `<OPENSEARCH-KIBANA-PW>` with the password of the kibana-user 
@@ -264,7 +274,7 @@ And you should see the `samba_smb` index, which is still empty.
 
 
 
-### Setup steps on Samba fileserver machine
+### Setup steps on Samba fileserver machine (or container)
 
 On the Samba fileserver machine:
 - FScrawler: compile and install as a service
@@ -368,10 +378,11 @@ usermod -s "/bin/bash" fscrawler
 su - fscrawler
 mkdir .fscrawler
 ln -s .fscrawler etc
-ln -s current/config/log4j2.xml etc/log4j2.xml
 mkdir etc/samba_smb
 usermod -s "/usr/sbin/nologin" fscrawler
 ```
+
+- Copy `fscrawler/log4j2.xml` to `/opt/fscrawler/etc/log4j2.xml`
 
 - For each share to index:
   - Determine the basename of the share-path, if the path is `/the/path/to/my/share`, the basename is `share`. 
