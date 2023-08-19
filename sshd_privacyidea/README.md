@@ -18,16 +18,15 @@ A description of how to setup Privacyidea with Samba backend is [here](../privac
  (_   _    _)              |          |       |     |              ---------------  
    (_) (__)                :..........: ------      |          LDAP     |  ^ LDAP
                            :          :             |          account  |  | attributes
-    ___   _                :          :             |          validate V  |           
-   [(_)] |=|               :..........: ______      |              _______________  
-    '-`  |_|               |          |       |     | authz LDAP  |               | 
-   /mmm/  /                |  SSH     | Pam   |     +-----------> |  Samba AD-DC  | 
- ________|____ <========>  |  daemon  |       |                   |               | 
-     |    LAN   password   |          |       |                    ---------------  
- ___  \_                    ---------- -------                                       
-[(_)] |=|                                 |                     
- '-`  |_|                                 +---> via nsswitch, e.g. files, systemd, winbind          
-/mmm/                                                          
+     ______                :          :             |          validate V  |           
+    |  PC  |               :..........: ______      |              _______________  
+     ------                |          |       |     | authz LDAP  |               | 
+       |                   |  SSH     | Pam   |     +-----------> |  Samba AD-DC  | 
+ ______|______ <========>  |  daemon  |       |                   |               | 
+     |   LAN    password   |          |       |                    ---------------  
+  ______                    ---------- -------                                       
+ |  PC  |                                 |                     
+  ------                                  +---> via nsswitch, e.g. files, systemd, winbind          
 ```
 
 ## Setup
