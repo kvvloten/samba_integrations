@@ -146,7 +146,7 @@ Spotlight (Apple-search) for Samba
                                 ---------------                        WebUI        --------------
 ```
 
-Setup details are in README [here](samba_fileserver_spotlight/README.md) 
+Setup details are in README [here](fileserver_search/README.md) 
 
 ## Cron- and management scripts for Samba-AD controllers
 
