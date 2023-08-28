@@ -74,6 +74,8 @@ The Opensearch setup described creates a single-node cluster.
 
 #### Opensearch
 
+Note: The text is written on opensearch 2.9, until now there were small config changes with every version.
+
 - Create a service-account in Samba
 
 ```bash
@@ -113,23 +115,38 @@ sed -i 's/^OPENSEARCH_JAVA_HOME=/OPENSEARCH_JAVA_HOME=/usr/lib/jvm/java-11-openj
 
 # Move sample config out of the way
 mv /etc/opensearch /etc/opensearch-example
-mkdir /etc/opensearch
+mkdir -m 0700 /etc/opensearch
+chown opensearch.opensearch /etc/opensearch
 for DIR in jvm.options.d opensearch-notifications opensearch-notifications-core opensearch-observability opensearch-performance-analyzer opensearch-reports-scheduler opensearch-security private; do
-    mkdir /etc/opensearch/${DIR}
+    mkdir -m 0700 /etc/opensearch/${DIR}
+    chown opensearch.opensearch /etc/opensearch/${DIR}
 done
 
 # Certificates
 chmod 0700 /etc/opensearch/private /etc/opensearch/opensearch-security
 cp /etc/ssl/certs/ca-certificates.crt /etc/opensearch/private
 cp /etc/ssl/certs/java/cacerts /etc/opensearch/private
+cat > /etc/cron.weekly/opensearch_log_cleanup << EOF
+#!/bin/bash
+# When running from cron PATH is not set
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+RETENTION_DAYS=14
+
+# Cleanup old files
+find /var/log/opensearch -type f -mtime +${RETENTION_DAYS} -name '*.[0-9][0-9]' -or  -name '*.[0-9]' -or -name '*.gz' -exec rm {} \;
+EOF
+chmod +x /etc/cron.weekly/opensearch_log_cleanup
 ```
 
 - Copy the host X509 (server-) certificate and a key file to `/etc/opensearch/private` and name them `host.crt`, `host.key`  
 - Copy the admin-user X509 (client-) certificate and a key file `/etc/opensearch/private` and name them `super_admin.crt`, `super_admin.key`
 
 ```bash
-openssl pkcs8 -inform PEM -outform PEM -in /etc/opensearch/private/super_admin.key -topk8 -nocrypt -v1 PBE-SHA1-3DES -out /etc/opensearch/private/super_admin.pkcs8.key
+openssl pkcs8 -inform PEM -outform PEM -in /etc/opensearch/private/host.key -topk8 -nocrypt -v1 PBE-SHA1-3DES -out /etc/opensearch/private/host.key.pkcs8
+openssl pkcs8 -inform PEM -outform PEM -in /etc/opensearch/private/super_admin.key -topk8 -nocrypt -v1 PBE-SHA1-3DES -out /etc/opensearch/private/super_admin.key.pkcs8
 chmod 0600 /etc/opensearch/private/*
+chown opensearch.opensearch /etc/opensearch/private/*
 
 SUPER_ADMIN_CN="$(openssl x509 -in /etc/opensearch/private/super_admin.crt -noout -subject | sed -e 's/subject=//g' -e 's/ = /=/g' -e 's/, /,/g')"
 echo "${SUPER_ADMIN_DN}"
@@ -151,6 +168,13 @@ echo "${SUPER_ADMIN_DN}"
 - Copy `opensearch/config/opensearch-reports-scheduler/reports-scheduler.yml` to `/etc/opensearch/opensearch-reports-scheduler/reports-scheduler.yml`
 - Copy `opensearch/config/limits.conf` to `/etc/security/limits.d/opensearch.conf`
 
+```bash
+for FILE in log4j2.properties opensearch-notifications/notifications.yml opensearch-notifications-core/notifications-core.yml \
+        opensearch-observability/observability.yml opensearch-reports-scheduler/reports-scheduler.yml; do
+    chown opensearch.opensearch /etc/opensearch/${FILE}
+    chmod 0600 /etc/opensearch/${FILE}
+done
+```
 
 - Copy `opensearch/roles_static/*` to `/etc/opensearch/opensearch-security/`
 
@@ -243,7 +267,8 @@ apt-get install opensearch-dashboards
 rm /etc/init.d/opensearch-dashboards
 ```
 
-- Copy `opensearch_dashboards/opensearch_dashboards.yml` to `/etc/opensearch_dashboards/opensearch_dashboards.ym`
+- Copy `opensearch_dashboards/logrotate.conf` to `/etc/logrotate.d/opensearch-dashboards`
+- Copy `opensearch_dashboards/opensearch_dashboards.yml` to `/etc/opensearch_dashboards/opensearch_dashboards.yml`
 - Edit: `/etc/opensearch_dashboards/opensearch_dashboards.yml`:
   - Replace `<HOSTNAME>`with the hostname
   - Replace `<OPENSEARCH-FQDN>` with the server-fqdn of the opensearch server
@@ -396,8 +421,9 @@ usermod -s "/usr/sbin/nologin" fscrawler
     - Replace `<OPENSEARCH-LOCAL-FSCRAWLER-PW>` with the opensearch service-account user password (`OPENSEARCH-LOCAL-FSCRAWLER-PW`)
     - Replace `<OPENSEARCH-FQDN>` with the opensearch hostname
 
+- Copy `fscrawler/rescan_all_files` to `/opt/fscrawler/bin/rescan_all_files`
 - Copy `fscrawler/fscrawler_loop` to `/opt/fscrawler/bin/fscrawler_loop`
-- Make it executable: `chmod +x /opt/fscrawler/bin/fscrawler_loop`
+- Make these executable: `chmod +x /opt/fscrawler/bin/fscrawler_loop /opt/fscrawler/bin/rescan_all_files`
 - Edit `/opt/fscrawler/bin/fscrawler_loop`:
   - For each share to index, set the basename of the share-path in `SHARE_NAMES`  
 
@@ -424,8 +450,8 @@ Output of `fscrawler_loop` can be checked with `journalctl -f -u fscrawler.servi
 FScrawler will index everything it finds at its first run and in subsequent runs it will use the last run time from
 `/opt/fscrawler/etc/samba_smb_<BASENAME-OF-SHARE>/_status.json` and look at newer files only.
 
-If the you are missing files in the index then try to remove the `_status.json` file, at the next run it will not know 
-its indexing history and index everything again.
+If the you are missing files in the index then try to remove the `_status.json` file (run `/opt/fscrawler/bin/rescan_all_files` 
+to do this for all jobs at once). At the next run it will not know its indexing history and index everything again.
 
 
 #### Samba fileserver 
