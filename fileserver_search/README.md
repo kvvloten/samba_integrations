@@ -1,6 +1,6 @@
 # Spotlight for Samba
 
-**DISCLAIMER: Use of anything provided here is at you own risk!**
+**DISCLAIMER: Use of anything provided here is at your own risk!**
 
 The Spotlight setup in Samba itself is documented on the Samba [wiki](https://wiki.samba.org/index.php/Spotlight_with_Elasticsearch_Backend)
 

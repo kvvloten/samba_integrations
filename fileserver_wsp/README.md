@@ -1,6 +1,6 @@
 # Windows-search on top of Spotlight for Samba
 
-**DISCLAIMER: Use of anything provided here is at you own risk!**
+**DISCLAIMER: Use of anything provided here is at your own risk!**
 
 WSP (Windows-search) on top of the Spotlight (Apple-search) setup for Samba
 

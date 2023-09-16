@@ -1,6 +1,6 @@
 # Cron and management scripts for Samba-AD controllers
 
-**DISCLAIMER: Use of anything provided here is at you own risk!**
+**DISCLAIMER: Use of anything provided here is at your own risk!**
 
 **This setup should be executed on ALL Samba-DCs**
 

@@ -1,6 +1,6 @@
 # Privacyidea with Samba backend
 
-**DISCLAIMER: Use of anything provided here is at you own risk!**
+**DISCLAIMER: Use of anything provided here is at your own risk!**
 
 [Privacyidea](https://github.com/privacyidea/privacyidea) is a versatile multi-factor authentication system. When configured with Samba as backend users get MFA with their Samba user-id.  
 
@@ -39,6 +39,7 @@ PRIVACYIDEA_VERSION=3.8.1
 # Versions can be found at: https://github.com/privacyidea/privacyidea/tags
 
 apt-get install postgresql-client python3-pip python3-venv makepasswd apache2 libapache2-mod-wsgi-py3 jq curl
+a2enmod wsgi
 
 mkdir /etc/privacyidea /var/log/privacyidea /opt/privacyidea
 useradd -d /opt/privacyidea/wsgi -m -r -s /usr/sbin/nologin -U -G www-data privacyidea
@@ -121,7 +122,7 @@ usermod -s "/usr/sbin/nologin" privacyidea
 - The uri is set to `/pi` in `/etc/apache2/conf-available/privacyidea.conf`, change it if you want something else
 - Edit `/etc/apache2/sites-enabled/default-ssl.conf` (or whatever is your TLS enabled vhost conf):
   - Insert a line `Include /etc/apache2/conf-available/privacyidea.conf` in the vhost
-  - Reload apache `apachectl graceful`
+  - Reload apache `systemctl restart apache2`
 
 ### Test
 

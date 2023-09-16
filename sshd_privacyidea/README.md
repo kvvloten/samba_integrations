@@ -1,6 +1,6 @@
 # SSHD with Privacyidea MFA and Samba authorization (for access from internet)
 
-**DISCLAIMER: Use of anything provided here is at you own risk!**
+**DISCLAIMER: Use of anything provided here is at your own risk!**
 
 SSHD setup with Privacyidea MFA authentication and Samba LDAP authorization based on nested group membership.
 

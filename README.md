@@ -1,6 +1,6 @@
 # Tools and integrations for Samba-AD
 
-**DISCLAIMER: Use of anything provided here is at you own risk!**
+**DISCLAIMER: Use of anything provided here is at your own risk!**
 
 
 ## Anonymous LDAP-proxy

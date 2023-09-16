@@ -1,6 +1,6 @@
 # Openvpn with Privacyidea MFA and Samba authorization
 
-**DISCLAIMER: Use of anything provided here is at you own risk!**
+**DISCLAIMER: Use of anything provided here is at your own risk!**
 
 OpenVPN setup with Privacyidea MFA authentication and Samba LDAP authorization based on nested group membership.
 

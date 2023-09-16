@@ -1,6 +1,6 @@
 # Password notifier
 
-**DISCLAIMER: Use of anything provided here is at you own risk!**
+**DISCLAIMER: Use of anything provided here is at your own risk!**
 
 Send notification and warning mails to your users about password expiry
 
