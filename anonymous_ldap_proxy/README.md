@@ -35,7 +35,7 @@ apt-get install slapd ldap-utils
 ```bash
 # On one of the DCs:
 samba-tool user create <SERVICE-ACCOUNT NAME>
-# Ensure this account does not expire
+samba-tool user setexpiry --noexpiry <SERVICE-ACCOUNT NAME>
 
 # Get the DN and put it in slapd.conf
 samba-tool user show <SERVICE-ACCOUNT NAME>

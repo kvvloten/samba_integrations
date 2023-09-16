@@ -21,13 +21,14 @@ Privacyidea supports a variety of tokens and integrations, e.g. Openvpn integrat
 
 **Do not use a Samba-AD-DC server to setup Privacyidea!** 
 
-Setup instructions are written for a Debian server.
+Setup instructions are written for a Debian Bullseye server.
 
 The instructions below will use a Postgresql database but other databases are supported, see [docuementation](https://privacyidea.readthedocs.io/en/latest/installation/pip.html#database)
 
 Assumptions:
 - Postgresql is already setup, possible on a different server.
 - Apache2 is setup on the same server as Privacyidea and has a TLS enabled vhost ready to use. 
+- Each service will use its own service-account to connect to Samba-AD
 
 ### Initial setup steps
 
@@ -137,7 +138,7 @@ usermod -s "/usr/sbin/nologin" privacyidea
 ```bash
 # On one of the DCs:
 samba-tool user create <SERVICE-ACCOUNT NAME>
-# Ensure this account does not expire
+samba-tool user setexpiry --noexpiry <SERVICE-ACCOUNT NAME>
 
 # Get the DN and put it in slapd.conf
 samba-tool user show <SERVICE-ACCOUNT NAME>
