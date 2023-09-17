@@ -140,7 +140,7 @@ usermod -s "/usr/sbin/nologin" privacyidea
 samba-tool user create <SERVICE-ACCOUNT NAME>
 samba-tool user setexpiry --noexpiry <SERVICE-ACCOUNT NAME>
 
-# Get the DN and put it in slapd.conf
+# Get the DN, the <SERVICE-ACCOUNT DN>
 samba-tool user show <SERVICE-ACCOUNT NAME>
 ```
 
