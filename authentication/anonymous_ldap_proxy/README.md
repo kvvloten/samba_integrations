@@ -1,4 +1,4 @@
-# Setup anonymous LDAP-proxy
+# Anonymous LDAP-proxy
 
 **DISCLAIMER: Use of anything provided here is at you own risk!**
 

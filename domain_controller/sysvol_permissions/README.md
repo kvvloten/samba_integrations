@@ -1,4 +1,4 @@
-# More Windows-like sysvol permissions
+# More Windows-like sysvol ans LDAP permissions
 
 **DISCLAIMER: Use of anything provided here is at you own risk!**
 
