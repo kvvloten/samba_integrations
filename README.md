@@ -1,4 +1,4 @@
-# Integrations for Samba Active Directory domain
+# Integrations for Samba Active Directory
 
 **DISCLAIMER: Use of anything provided here is at you own risk!**
 
