@@ -1,0 +1,49 @@
+{
+    "enable": {
+        "mailbox": "<user_ldap_attribute|domain>", 
+        "settings": "<user_ldap_attribute|domain>"
+    },
+    "ldap": {
+        "uri": "ldap://<YOUR 1ST DC-SERVER>/ ldap://<YOUR 2ND DC-SERVER>/",
+        "user": "<SERVICE-ACCOUNT DN>",
+        "password": "<SERVICE-ACCOUNT PASSWORD>",
+        "base_dn": "<BASE-DN>",
+        "external_machine_groups": []
+    },
+    "mail": {
+        "server_intern": "<INTERNAL-MAIL-FQDN>",
+        "server_extern": "<EXTERNAL-MAIL-FQDN>",
+        "namespace_shared": "shared",
+        "dns_domain": "<DOMAIN-NAME>",
+        "mailbox_domain_folders":  false,
+        "maximum_message_size": 60,
+        "imap": {
+            "port": 993,
+            "security": "tls"
+        },
+        "smtp": {
+            "port": 465,
+            "security": "tls"
+        }
+    },
+    "carddav": {
+        "url_intern": "https://<INTERNAL-SOGO-FQDN>/SOGo",
+        "url_extern": "https://<EXTERNAL-SOGO-FQDN>/SOGo",
+        "domain_addressbook": {
+            "title": "Employees",
+            "id": "<DOMAIN-ADDRESSBOOK-ID>"
+        },
+        "personal_addressbook_title": "Personal addressbook (online)",
+        "collected_addressbook_title": "Collected addresses (online)"
+    },
+    "calendar": {
+        "url_intern": "https://<INTERNAL-SOGO-FQDN>/SOGo",
+        "url_extern": "https://<EXTERNAL-SOGO-FQDN>/SOGo",
+        "title": "Personal calendar (online)",
+        "timezone": "Europe/Amsterdam",
+        "first_week_day": 1,
+        "weekend_days": [0, 6],
+        "business_hours": [8, 17]
+    },
+    "thunderbird_cache_directory": "/opt/mail/mailconfig/thunderbird_cache"
+}

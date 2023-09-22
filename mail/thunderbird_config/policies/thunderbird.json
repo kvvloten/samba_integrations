@@ -1,0 +1,113 @@
+[
+    {
+        "keyname": "Software\\Policies\\Mozilla\\Thunderbird",
+        "valuename": "DisableTelemetry",
+        "class": "MACHINE",
+        "type": "REG_DWORD",
+        "data": 1
+    },
+    {
+        "keyname": "Software\\Policies\\Mozilla\\Thunderbird",
+        "valuename": "**del.SSLVersionMax",
+        "class": "MACHINE",
+        "type": "REG_SZ",
+        "data": " "
+    },
+    {
+        "keyname": "Software\\Policies\\Mozilla\\Thunderbird",
+        "valuename": "SSLVersionMin",
+        "class": "MACHINE",
+        "type": "REG_SZ",
+        "data": "tls1.2"
+    },
+    {
+        "keyname": "Software\\Policies\\Mozilla\\Thunderbird",
+        "valuename": "PasswordManagerEnabled",
+        "class": "MACHINE",
+        "type": "REG_DWORD",
+        "data": 1
+    },
+    {
+        "keyname": "Software\\Policies\\Mozilla\\Thunderbird\\Certificates",
+        "valuename": "ImportEnterpriseRoots",
+        "class": "MACHINE",
+        "type": "REG_DWORD",
+        "data": 1
+    },
+    {
+        "keyname": "Software\\Policies\\Mozilla\\Thunderbird\\DNSOverHTTPS",
+        "valuename": "Enabled",
+        "class": "MACHINE",
+        "type": "REG_DWORD",
+        "data": 0
+    },
+
+
+    {
+        "keyname": "Software\\Policies\\Mozilla\\Thunderbird\\Extensions\\Install",
+        "valuename": "0",
+        "class": "MACHINE",
+        "type": "REG_EXPAND_SZ",
+        "data": "https://addons.thunderbird.net/user-media/addons/_attachments/986643/filelink_provider_for_webdav-5-tb.xpi"
+    },
+    {
+        "keyname": "Software\\Policies\\Mozilla\\Thunderbird\\Extensions\\Locked",
+        "valuename": "0",
+        "class": "MACHINE",
+        "type": "REG_SZ",
+        "data": "dav-cloudfile@darktrojan.net"
+    },
+    {
+        "keyname": "Software\\Policies\\Mozilla\\Thunderbird\\Extensions\\Install",
+        "valuename": "1",
+        "class": "MACHINE",
+        "type": "REG_EXPAND_SZ",
+        "data": "https://addons.thunderbird.net/thunderbird/downloads/latest/folder-account/addon-2874-latest.xpi"
+    },
+    {
+        "keyname": "Software\\Policies\\Mozilla\\Thunderbird\\Extensions\\Locked",
+        "valuename": "1",
+        "class": "MACHINE",
+        "type": "REG_SZ",
+        "data": "{C8534C26-F59A-11DA-9804-B622A1EF5492}"
+    },
+    {
+        "keyname": "Software\\Policies\\Mozilla\\Thunderbird\\Extensions\\Install",
+        "valuename": "2",
+        "class": "MACHINE",
+        "type": "REG_EXPAND_SZ",
+        "data": "https://addons.thunderbird.net/thunderbird/downloads/latest/lookout-fix-version/addon-711780-latest.xpi"
+    },
+    {
+        "keyname": "Software\\Policies\\Mozilla\\Thunderbird\\Extensions\\Locked",
+        "valuename": "2",
+        "class": "MACHINE",
+        "type": "REG_SZ",
+        "data": "lookout@s3_fix_version"
+    },
+
+
+    {
+        "keyname": "Software\\Policies\\Mozilla\\Thunderbird\\Extensions\\Uninstall",
+        "valuename": "0",
+        "class": "MACHINE",
+        "type": "REG_SZ",
+        "data": "hlf@pharqcon.com"
+    },
+
+    
+    {
+        "keyname": "Software\\Policies\\Mozilla\\Thunderbird\\Authentication\\SPNEGO",
+        "valuename": "1",
+        "class": "MACHINE",
+        "type": "REG_SZ",
+        "data": "<DOMAIN NAME>"
+    },
+    {
+        "keyname": "Software\\Policies\\Mozilla\\Thunderbird",
+        "valuename": "Preferences",
+        "class": "MACHINE",
+        "type": "REG_MULTI_SZ",
+        "data": ["<PASTE PREFERENCES HERE AS A SINGLE LINE>"]
+    }
+]

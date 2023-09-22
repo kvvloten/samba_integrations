@@ -1,4 +1,4 @@
-# Tools and integrations for Samba-AD
+# Fileserver integrations for Samba-AD
 
 **DISCLAIMER: Use of anything provided here is at you own risk!**
 

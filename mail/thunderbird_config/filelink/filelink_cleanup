@@ -1,0 +1,6 @@
+#!/bin/bash
+# When running from cron PATH is not set
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+RETENTION_DAYS=60
+
+/usr/bin/find /var/lib/filelink -type f -mtime +${RETENTION_DAYS} -exec /bin/rm {} \;

@@ -52,8 +52,8 @@ pip install python-ldap
 
 ```bash
 # On one of the DCs:
-samba-tool user create <SERVICE-ACCOUNT NAME>
-# Ensure this account does not expire
+samba-tool user create <SERVICE-ACCOUNT NAME>  # for example svc_<HOSTNAME>_password_notifier
+samba-tool user setexpiry --noexpiry <SERVICE-ACCOUNT NAME>
 
 # Get the DN and put it in slapd.conf
 samba-tool user show <SERVICE-ACCOUNT NAME>
@@ -61,7 +61,7 @@ samba-tool user show <SERVICE-ACCOUNT NAME>
 
 - Copy `config.json` to `/opt/password_notifier`
 - Edit `/opt/password_notifier/config.json`:
-  - Set DC hostnames in `uri`
+  - Set DC hostnames in `<YOUR 1ST DC-SERVER>` and `<YOUR 2ND DC-SERVER>`
   - Set DN of the SERVICE-ACCOUNT in `user`
   - Set password of the SERVICE-ACCOUNT in `password`
   - Set base-DN of your user-accounts in `user_dn`

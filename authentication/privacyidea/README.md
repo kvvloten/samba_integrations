@@ -135,8 +135,8 @@ usermod -s "/usr/sbin/nologin" privacyidea
 
 ```bash
 # On one of the DCs:
-samba-tool user create <SERVICE-ACCOUNT NAME>
-# Ensure this account does not expire
+samba-tool user create <SERVICE-ACCOUNT NAME>  # for example svc_<HOSTNAME>_privacyidea
+samba-tool user setexpiry --noexpiry <SERVICE-ACCOUNT NAME>
 
 # Get the DN and put it in slapd.conf
 samba-tool user show <SERVICE-ACCOUNT NAME>

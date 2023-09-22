@@ -39,7 +39,7 @@ The setup partially overlaps with [Openvpn with Privacyidea](../openvpn_privacyi
 'Create a python2 venv' and 'Install and configure privacyidea_pam' can be skipped here when they are already setup.
 
 Assumptions:
-- Samba-AD has a (nested-) group 'PERMISSION-GROUP' that contains users with permission to login from internet on this server. 
+- Samba-AD has a (nested-) group `PERMISSION-GROUP` that contains users with permission to login from internet on this server. 
 - The users to login are known / can be resolved on the host (e.g. through winbind-nss)
 - The users to login have a home-directory (or pam-mkhomedir should be added to create it) 
 
@@ -124,8 +124,8 @@ EOF
 
 ```bash
 # On one of the DCs:
-samba-tool user create <SERVICE-ACCOUNT NAME>
-# Ensure this account does not expire
+samba-tool user create <SERVICE-ACCOUNT NAME>  # for example svc_<HOSTNAME>_sshd
+samba-tool user setexpiry --noexpiry <SERVICE-ACCOUNT NAME>
 
 # Get the DN and put it in slapd.conf
 samba-tool user show <SERVICE-ACCOUNT NAME>

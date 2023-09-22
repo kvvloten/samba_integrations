@@ -119,3 +119,26 @@ Web interface to change in an LDAP directory.
 ```
 
 Setup details are in [README](password_notifier/README.md) 
+
+
+# Apache with Kerberos and Basic authentication fallback to Samba-AD
+
+Apache authentication based on Kerberos-ticket against Samba-AD with fallback to Basic-auth if no ticket is offered.
+Authorization uses LDAP in both cases, it reads nested groups to check group membership.   
+
+```text
+  ___________                    ___________                       _______________     
+ |           |   Krb5-ticket    |  Apache   |  authn Krb5-ticket  |               |
+ |  Browser  | ===============> |  server   | ------------------> |               |
+ |           |                  |           | --+                 |               | 
+  -----------                   :...........:   |  authz LDAP     |               |
+                                :           :   +---------------> |  Samba AD-DC  |
+  -----------                   :...........:   |
+ |           |                  |  Apache   | --+                 |               |
+ |  Browser  | ==============>  |  server   |      authn LDAP     |               |            
+ |           |                  |           | ------------------> |               |  
+  -----------                    -----------                       ---------------
+```
+
+
+Setup details are in [README](apache_krb5+basic-auth/README.md) 

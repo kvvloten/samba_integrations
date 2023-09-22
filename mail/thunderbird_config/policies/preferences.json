@@ -1,0 +1,22 @@
+{
+  \"app.update.auto\": {
+    \"Value\": false,
+    \"Status\": \"locked\"
+  },
+  \"app.update.enabled\": {
+    \"Value\": false,
+    \"Status\": \"locked\"
+  },
+  \"datareporting.policy.dataSubmissionPolicyBypassNotification\": {
+    \"Value\": 1,
+    \"Status\": \"locked\"
+  },
+  \"datareporting.policy.dataSubmissionEnabled\": {
+    \"Value\": false,
+    \"Status\": \"locked\"
+  },
+  \"datareporting.policy.firstRunURL\": {
+    \"Value\": \"\",
+    \"Status\": \"locked\"
+  }
+}

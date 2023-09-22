@@ -42,7 +42,7 @@ The setup partially overlaps with [SSHD with Privacyidea](../sshd_privacyidea/RE
 Assumptions:
 - A X509 (server-) certificate and a key file suitable for openvpn are available
 - A X509 ca.crt file is available
-- Samba-AD has a (nested-) group 'PERMISSION-GROUP' that contains users with permission to use OpenVPN 
+- Samba-AD has a (nested-) group `PERMISSION-GROUP` that contains users with permission to use OpenVPN 
 
 ### Setup steps
 
@@ -142,8 +142,8 @@ EOF
 
 ```bash
 # On one of the DCs:
-samba-tool user create <SERVICE-ACCOUNT NAME>
-# Ensure this account does not expire
+samba-tool user create <SERVICE-ACCOUNT NAME>  # for example svc_<HOSTNAME>_openvpn
+samba-tool user setexpiry --noexpiry <SERVICE-ACCOUNT NAME>
 
 # Get the DN and put it in slapd.conf
 samba-tool user show <SERVICE-ACCOUNT NAME>
