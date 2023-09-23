@@ -17,11 +17,11 @@ The operating environment for described configuration:
  |  ---------------  |  (account settings)  |               |
   -------------------                        ---------------
       |  | |  | |
-      |  | |  | |    Imap4   -----------
-      |  | |  | +---------> |           |
-      |  | |  | Submission  |  Dovecot  |
-      |  | |  +-----------> |           |
-      |  | |                 -----------
+      |  | |  | |    Imap4   ----------- -----------
+      |  | |  | +---------> |           |           |
+      |  | |  | Submission  |  Dovecot  |  Postfix  |
+      |  | |  +-----------> |           |           |
+      |  | |                 ----------- -----------
       |  | |        CalDav   ___________
       |  | +--------------> |           |
       |  |         CardDav  |   SGOO    |                                          
@@ -368,6 +368,7 @@ COLLECTED_ADDRESSBOOK_ID="$(awk '/"\/Users\/'${USERNAME}'@'${DNS_DOMAIN}'/ {sub(
                             awk '/"'"${COLLECTED_ADDRESSBOOK_TITLE}"'"/{print $1}' | awk -F / '{print $5}')"
 
 echo "Collected addressbook ID: ${COLLECTED_ADDRESSBOOK_ID}"
+rm -r "${TEMPDIR}"
 ```
 
 Go to the DC-controller and set the `COLLECTED_ADDRESSBOOK_ID` on the user record in LDAP
