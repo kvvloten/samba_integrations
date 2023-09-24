@@ -1,0 +1,15 @@
+
+try {
+    Services.console.logStringMessage("Filelink settings");
+    lockPref(   "mail.cloud_files.accounts.account1.displayName", "WebDAV");
+    lockPref(   "mail.cloud_files.accounts.account1.type", "ext-dav-cloudfile@darktrojan.net");
+    lockPref(   "mail.cloud_files.enabled", true);
+    lockPref(   "mail.cloud_files.inserted_urls.footer.link", "");
+    lockPref(   "mail.cloud_files.learn_more_url", "");
+    lockPref(   "mail.compose.big_attachments.insert_notification", true);
+    lockPref(   "mail.compose.big_attachments.notify", true);
+    lockPref(   "mail.compose.big_attachments.threshold_kb", {{ filelink.maximum_message_size }});
+    lockPref(   "mail.compose.big_attachments.insert_notification", true);
+} catch(e) {
+    displayError("{{ user_name }}.js - Filelink settings", e);
+}

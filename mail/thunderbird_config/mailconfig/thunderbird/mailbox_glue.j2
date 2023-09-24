@@ -1,0 +1,11 @@
+
+try {
+    Services.console.logStringMessage("Glue mail-accounts together");
+    pref(       "mail.smtpservers", "{{ smtp_refs }}");
+    pref(       "mail.accountmanager.accounts", "{{ account_refs }}");
+    pref(       "mail.smtp.defaultserver", "{{ default_smtp }}");
+    pref(       "mail.accountmanager.defaultaccount", "{{ default_account }}");
+    pref(       "mail.accountmanager.localfoldersserver", "server2");
+} catch(e) {
+    displayError("{{ user_name }}.js - Glue mail-accounts together", e);
+}

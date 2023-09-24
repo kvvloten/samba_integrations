@@ -1,0 +1,24 @@
+
+try {
+    Services.console.logStringMessage("Domain-mailbox-base: {{ mailbox_name }}");
+    // IMAP server settings
+    lockPref(   "mail.server.server{{ server_index }}.name", "{{ display_name }}");
+    lockPref(   "mail.server.server{{ server_index }}.type", "imap");
+    lockPref(   "mail.server.server{{ server_index }}.hostname", "{{ imap.server }}");
+    lockPref(   "mail.server.server{{ server_index }}.port", {{ imap.port }});
+    lockPref(   "mail.server.server{{ server_index }}.realuserName", "{{ user_name }}");
+    lockPref(   "mail.server.server{{ server_index }}.socketType", {{ imap.security }});
+    lockPref(   "mail.server.server{{ server_index }}.authMethod", {{ imap.auth_method }});
+    // SMTP server settings
+    lockPref(   "mail.smtpserver.smtp{{ server_index }}.description", "{{ mailbox_name }}");
+    lockPref(   "mail.smtpserver.smtp{{ server_index }}.authMethod", {{ smtp.auth_method }});
+    lockPref(   "mail.smtpserver.smtp{{ server_index }}.hostname", "{{ smtp.server }}");
+    lockPref(   "mail.smtpserver.smtp{{ server_index }}.port", {{ smtp.port }});
+    lockPref(   "mail.smtpserver.smtp{{ server_index }}.try_ssl", {{ smtp.security }});
+    lockPref(   "mail.smtpserver.smtp{{ server_index }}.username", "{{ user_name }}");
+    // Glue identities and imap to account
+    pref(       "mail.account.account{{ account_index }}.identities", "{% for index in ordered_identities %}id{{ index }}{% if not loop.last %},{% endif %}{% endfor %}");
+    pref(       "mail.account.account{{ account_index }}.server", "server{{ server_index }}");
+} catch(e) {
+    displayError("{{ user_name }}.js - Domain-mailbox-base: {{ mailbox_name }}", e);
+}

@@ -1,0 +1,18 @@
+
+try {
+    Services.console.logStringMessage("Domain-mailbox-settings: {{ mailbox_name }}");
+    // Spam settings
+    pref(       "mail.server.server{{ server_index }}.spamActionTargetAccount", "imap://{{ user_name }}@{{ imap.server }}");
+    pref(       "mail.server.server{{ server_index }}.spamActionTargetFolder", "imap://{{ user_name }}@{{ imap.server }}/Junk");
+    pref(       "mail.server.server{{ server_index }}.moveOnSpam", true);
+    pref(       "mail.server.server{{ server_index }}.purgeSpam", true);
+    // Other settings
+    // Message Disposition Notifications (MDN) are email reports sent by the MTA to a sender and/or
+    //   postmaster reporting on a message's delivery disposition
+    // mdn settings in tb: https://searchcode.com/codesearch/view/21376583/
+    pref(       "mail.server.server{{ server_index }}.mdn_not_in_to_cc", 0);
+    pref(       "mail.server.server{{ server_index }}.check_new_mail", true);
+    pref(       "mail.server.server{{ server_index }}.login_at_startup", true);
+} catch(e) {
+    displayError("{{ user_name }}.js - Domain-mailbox-settings: {{ mailbox_name }}", e);
+}

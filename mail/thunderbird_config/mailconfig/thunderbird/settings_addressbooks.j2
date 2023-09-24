@@ -1,0 +1,31 @@
+
+try {
+    Services.console.logStringMessage("Addressbook settings");
+    // Remove default addressbook https://superuser.com/a/1007663
+    pref(       "ldap_2.servers.pab.dirType", -1);
+    pref(       "ldap_2.servers.history.dirType", -1);
+
+    // Domain addressbook
+    lockPref(   "ldap_2.servers.domain.carddav.url", "{{ carddav.base_url }}/dav/{{ user_name }}@{{ dns_domain }}/Contacts/{{ carddav.domain_addressbook.id }}/");
+    lockPref(   "ldap_2.servers.domain.description", "{{ carddav.domain_addressbook.title }}");
+    lockPref(   "ldap_2.servers.domain.dirType", 102);
+    lockPref(   "ldap_2.servers.domain.filename", "abook-1.sqlite");
+
+    // SOGO personal addressbook
+    lockPref(   "ldap_2.servers.personal.carddav.url", "{{ carddav.base_url }}/dav/{{ user_name }}@{{ dns_domain }}/Contacts/personal/");
+    lockPref(   "ldap_2.servers.personal.description", "{{ carddav.personal_addressbook_title }}");
+    lockPref(   "ldap_2.servers.personal.dirType", 102);
+    lockPref(   "ldap_2.servers.personal.filename", "abook-2.sqlite");
+
+    // SOGO collected-addresses addressbook
+{% if carddav.collected_addressbook.id | length > 0 %}    lockPref(   "ldap_2.servers.collected.carddav.uidsToSync", "");
+    lockPref(   "ldap_2.servers.collected.carddav.url", "{{ carddav.base_url }}/dav/{{ user_name }}@{{ dns_domain }}/Contacts/{{ carddav.collected_addressbook.id }}/");
+    lockPref(   "ldap_2.servers.collected.description", "{{ carddav.collected_addressbook.title }}");
+    lockPref(   "ldap_2.servers.collected.dirType", 102);
+    lockPref(   "ldap_2.servers.collected.filename", "abook-3.sqlite");
+{% endif %}   
+    // location to store collected addresses
+    lockPref(   "mail.collect_addressbook", "jscarddav://abook-3.sqlite");
+} catch(e) {
+    displayError("{{ user_name }}.js - Addressbook settings", e);
+}

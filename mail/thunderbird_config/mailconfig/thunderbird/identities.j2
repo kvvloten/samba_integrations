@@ -1,0 +1,30 @@
+
+try {
+    Services.console.logStringMessage("Domain-mail identities");
+{% for identity in identities %}
+    Services.console.logStringMessage("  identity: {{ identity.mail_address }}");
+    lockPref(   "mail.identity.id{{ identity.index }}.fullName", "{{ identity.full_name }}");
+    lockPref(   "mail.identity.id{{ identity.index }}.organization", "{{ identity.organization }}");
+    lockPref(   "mail.identity.id{{ identity.index }}.useremail", "{{ identity.mail_address }}");
+    lockPref(   "mail.identity.id{{ identity.index }}.reply_to", "");
+    lockPref(   "mail.identity.id{{ identity.index }}.reply_on_top", 1);
+    lockPref(   "mail.identity.id{{ identity.index }}.sig_bottom", false);
+    lockPref(   "mail.identity.id{{ identity.index }}.htmlSigFormat", true);
+{% if identity.signature | length > 0 %}    lockPref(   "mail.identity.id{{ identity.index }}.htmlSigText", "{{ identity.signature }}");
+    lockPref(   "mail.identity.id{{ identity.index }}.attach_signature", false);
+{% endif %}    lockPref(   "mail.identity.id{{ identity.index }}.archive_folder", "imap://{{ user_name }}@{{ imap.server }}/Archives");
+    lockPref(   "mail.identity.id{{ identity.index }}.draft_folder", "imap://{{ user_name }}@{{ imap.server }}/Drafts");
+    lockPref(   "mail.identity.id{{ identity.index }}.fcc_folder", "imap://{{ user_name }}@{{ imap.server }}/Sent");
+    lockPref(   "mail.identity.id{{ identity.index }}.stationery_folder", "imap://{{ user_name }}@{{ imap.server }}/Templates");
+    lockPref(   "mail.identity.id{{ identity.index }}.catchAll", true);
+    lockPref(   "mail.identity.id{{ identity.index }}.catchAllHint", "{{ identity.aliases | join(',') }}");
+    // Other identity settings
+    lockPref(   "mail.identity.id{{ identity.index }}.valid", true);
+    defaultPref("mail.identity.id{{ identity.index }}.drafts_folder_picker_mode", "1");
+    defaultPref("mail.identity.id{{ identity.index }}.fcc_folder_picker_mode", "1");
+    // Glue smtp to identity
+    pref(       "mail.identity.id{{ identity.index }}.smtpServer", "smtp{{ server_index }}");
+{% endfor %}
+} catch(e) {
+    displayError("{{ user_name }}.js - Domain-mail identities", e);
+}

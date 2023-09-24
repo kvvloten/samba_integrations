@@ -1,0 +1,35 @@
+
+try {
+    Services.console.logStringMessage("Calendar settings");
+
+    defaultPref("calendar.alarms.showmissed", false);
+    defaultPref("calendar.autorefresh.timeout", 30);
+    defaultPref("calendar.caldav.sched.enabled", true);
+    defaultPref("calendar.invitations.autorefresh.timeout", 30);
+    lockPref(   "calendar.timezone.local", "{{ calendar.timezone }}");
+    defaultPref("calendar.view.daystarthour", {{ calendar.business_hours[0] }});
+    defaultPref("calendar.view.dayendhour", {{ calendar.business_hours[1] }});
+    defaultPref("calendar.week.start", {{ calendar.first_week_day }});
+    defaultPref("calendar.week.d0sundaysoff", {{ 'true' if 0 in calendar.weekend_days else 'false'  }});
+    defaultPref("calendar.week.d1mondaysoff", {{ 'true' if 1 in calendar.weekend_days else 'false'  }});
+    defaultPref("calendar.week.d2tuesdaysoff", {{ 'true' if 2 in calendar.weekend_days else 'false'  }});
+    defaultPref("calendar.week.d3wednesdaysoff", {{ 'true' if 3 in calendar.weekend_days else 'false'  }});
+    defaultPref("calendar.week.d4thursdaysoff", {{ 'true' if 4 in calendar.weekend_days else 'false'  }});
+    defaultPref("calendar.week.d5fridaysoff", {{ 'true' if 5 in calendar.weekend_days else 'false'  }});
+    defaultPref("calendar.week.d6saturdaysoff", {{ 'true' if 6 in calendar.weekend_days else 'false'  }});
+
+    lockPref(   "calendar.list.sortOrder", "{{ calendar.uuid }}");
+    lockPref(   "calendar.registry.{{ calendar.uuid }}.cache.enabled", true);
+    lockPref(   "calendar.registry.{{ calendar.uuid }}.calendar-main-default", true);
+    lockPref(   "calendar.registry.{{ calendar.uuid }}.calendar-main-in-composite", true);
+    lockPref(   "calendar.registry.{{ calendar.uuid }}.name", "{{ calendar.title }}");
+    lockPref(   "calendar.registry.{{ calendar.uuid }}.readOnly", false);
+    lockPref(   "calendar.registry.{{ calendar.uuid }}.type", "caldav");
+    lockPref(   "calendar.registry.{{ calendar.uuid }}.uri", "{{ calendar.base_url }}/dav/{{ user_name }}@{{ dns_domain }}/Calendar/personal/");
+    lockPref(   "calendar.registry.{{ calendar.uuid }}.username", "{{ user_name }}");
+
+
+
+} catch(e) {
+    displayError("{{ user_name }}.js - Calendar settings", e);
+}

@@ -1,0 +1,16 @@
+
+try {
+    Services.console.logStringMessage("Domain-mail folderaccount");
+{% for identity in identities %}
+    Services.console.logStringMessage("  identity: {{ identity.mail_address }}");
+{% if identity.folder_path | length > 0 %}    // Folder account
+    lockPref(   "extensions.folderaccount.addToCcOnReply.imap://{{ user_name }}@{{ imap.server }}/{{ identity.folder_path }}", "");
+    lockPref(   "extensions.folderaccount.imap://{{ user_name }}@{{ imap.server }}/{{ identity.folder_path }}", "id{{ identity.index }}");
+    lockPref(   "extensions.folderaccount.overrideReturnAddress.imap://{{ user_name }}@{{ imap.server }}/{{ identity.folder_path }}", "");
+    lockPref(   "extensions.folderaccount.replyTo.imap://{{ user_name }}@{{ imap.server }}/{{ identity.folder_path }}", "");
+    lockPref(   "extensions.folderaccount.replyToOnReplyForward.imap://{{ user_name }}@{{ imap.server }}/{{ identity.folder_path }}", "");
+{% endif %}    // Other identity settings
+{% endfor %}
+} catch(e) {
+    displayError("{{ user_name }}.js - Domain-mail folderaccount", e);
+}

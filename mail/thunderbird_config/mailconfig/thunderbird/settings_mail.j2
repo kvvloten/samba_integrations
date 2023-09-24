@@ -1,0 +1,16 @@
+
+try {
+    Services.console.logStringMessage("Generic mail settings");
+    // Disable folder subscription
+    // https://dovecot.org/pipermail/dovecot/2012-November/086956.html
+    lockPref(   "mail.server.default.using_subscription", false);
+
+    // Read messages from all folders
+    // http://kb.mozillazine.org/Checking_for_new_messages_in_other_folders_-_Thunderbird
+    // https://superuser.com/questions/392320/how-can-i-force-thunderbird-to-reload-imap-folder-structure
+    lockPref(   "mail.server.default.check_all_folders_for_new", true);
+
+    defaultPref("mail.startup.enabledMailCheckOnce", true);
+} catch(e) {
+    displayError("{{ user_name }}.js - Generic mail settings", e);
+}

@@ -33,60 +33,6 @@ def _get_cached_item(indices, mailbox_name, next_account_index, key):
     return cache, next_account_index
 
 
-def _get_conf_extra_mailboxes(indices, user_name, user_display_name):
-    conf_mailboxes = ''
-    extra_accounts_file = '{}/extra_accounts/{}.json'.format(FILE_PATH, user_name)
-    if not os.path.exists(extra_accounts_file):
-        return conf_mailboxes
-
-    with open(extra_accounts_file, "r") as read_file:
-        extra_accounts = json.load(read_file)
-
-    next_account_index = indices['account']
-    next_server_index = indices['server']
-    next_identity_index = indices['identity']
-
-    for extra_account in extra_accounts:
-        mailbox_name = extra_account['name']
-        account_cache, next_account_index = _get_cached_item(indices, mailbox_name, next_account_index, 'account')
-        server_cache, next_server_index = _get_cached_item(indices, mailbox_name, next_server_index, 'server')
-        identity_cache, next_identity_index = _get_cached_item(indices, mailbox_name, next_identity_index, 'identity')
-
-        template_vars = {
-            'account_index': account_cache['index'],
-            'server_index': server_cache['index'],
-            'mailbox_name': mailbox_name,
-            'user_name': mailbox_name,
-            'identity': {
-                'index': identity_cache['index'],
-                'mail_address': mailbox_name,
-                'full_name': extra_account['full_name'] if 'full_name' in extra_account else user_display_name,
-            },
-            'account_type': extra_account['type'],
-            'imap': {
-                'server': extra_account['imap']['server'],
-                'port': extra_account['imap']['port'],
-                'security': _get_conn_security(extra_account['imap']['security']),
-                'auth_method': _get_auth_method(extra_account['imap']['auth_method']),
-            },
-            'smtp': {
-                'server': extra_account['smtp']['server'],
-                'port': extra_account['smtp']['port'],
-                'security': _get_conn_security(extra_account['smtp']['security']),
-                'auth_method': _get_auth_method(extra_account['smtp']['auth_method']),
-            },
-        }
-        if 'oauth2' in extra_account:
-            template_vars['oauth2'] = extra_account['oauth2']
-        conf_mailboxes += jinja2_template('{}/thunderbird/mailbox_extra.j2'.format(FILE_PATH),
-                                          template_vars)
-
-    indices['account'] = next_account_index
-    indices['server'] = next_server_index
-    indices['identity'] = next_identity_index
-    return conf_mailboxes
-
-
 def _get_conf_domain_identities(config, indices, ldap_user, is_external_machine, account_index, server_index):
     mail_identities = identities.get_thunderbird_identities(ldap_user['sAMAccountName'], config,
                                                             indices['cached']['identities'], indices['identity'])
@@ -159,7 +105,6 @@ def _get_conf_mailboxes(config, ldap_user, user_cache, is_external_machine):
     }
 
     conf_mailboxes = _get_conf_domain_mailbox(config, indices, ldap_user, is_external_machine)
-    # conf_mailboxes += _get_conf_extra_mailboxes(indices, ldap_user['sAMAccountName'], ldap_user['displayName'])
 
     template_vars = {
         'account_refs': ','.join(['account{}'.format(index) for index in indices['accounts']]),
