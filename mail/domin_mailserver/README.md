@@ -35,7 +35,7 @@ The mailserver solution:
   | Browser | ----------------------> | |  SOGO Webmail       | | <------------------- DMZ
   |         |    | |                  | |       Sieve rules   | |
    ---------     | |                  | |       Calendars     | |
-           -     | |                  | |       Addressbooks  | |
+                 | |                  | |       Addressbooks  | |
                  | |                  | |.....................| |   Https
                  | |                  | |  SOGO Active Sync   | | <------------------- DMZ
                  | |                  | |                     | |
