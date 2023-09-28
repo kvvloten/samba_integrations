@@ -33,6 +33,7 @@ More details are in [README](fileserver/README.md)
 
 ### Mail
 
+- Domain-mailserver - AD-integrated Postfix, Dovecot, SOGO mailserver
 - Thunderbird-config - fully automated configuration for Thunderbird in the AD-domain
 
 More details are in [README](mail/README.md)
