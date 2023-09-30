@@ -44,7 +44,7 @@ Assumptions:
 - Users use `sAMAccountName` to login (i.e. not `mail` nor `userPrincipalName`).
 - Users authenticate with their Kerberos-ticket whenever possible (TB addons cannot use Kerberos, hence Filelink uses a password).
 - Samba-AD has a (nested-) group `PERMISSION-GROUP` that contains users with permission to use generic email resources, such as Apache + MCD, Apache WebDav, SOGO.
-- Apache2 is setup on the mailconfig / filelink server and on the dmz-server and has a TLS enabled vhost ready to use. 
+- Apache2 is setup on the mailconfig server, the filelink server and on the dmz-server and has a TLS enabled vhost ready to use. 
 - Each service will use its own service-account to connect to Samba-AD.
 - Dovecot (and Postfix) and SOGO are set up and available.
 
@@ -64,10 +64,10 @@ The setup involves:
 6. Apache ReverseProxy for access by the mail recipient of files stored by FileLink on Apache WebDav
 7. Manual FileLink settings in Thunderbird 
 
-The aim is to be able to automate everything, therefore manual actions, especially in UIs are avoided. 
+The aim is to be able to automate everything. Therefore manual actions, especially in UIs, are avoided. 
 The instructions below are an extracted from Ansible code.
 
-Setup of AD-integrated Dovecot (and Postfix) and SOGO (Webmail, CalDav/CardDav and Active-Sync server) will be covered elsewhere.
+Setup of AD-integrated Dovecot (and Postfix) and SOGO (Webmail, CalDav/CardDav and Active-Sync server) is covered [here](../domain_mailserver/README.md).
 
 
 ## Setup steps
@@ -77,9 +77,9 @@ Setup of AD-integrated Dovecot (and Postfix) and SOGO (Webmail, CalDav/CardDav a
 No schema modification to Samba-AD are required. 
 Instead, existing attributes are used (or call it abused) to store the required information.
 
-Postfix and Dovecot can use the same attributes to distribute and deliver email.
+Postfix and Dovecot uses the same attributes to distribute and deliver email (see [AD-integrated Postfix, Dovecot, SOGO mailserver](../domain_mailserver/README.md).
 
-## User object
+#### User object
 Attributes in the table have a special meaning to MailConfig
 
 | attribute                      | single | purpose                                              |
@@ -94,14 +94,14 @@ Attributes in the table have a special meaning to MailConfig
 Single indicates whether the attribute can store one value or multiple.
 
 The attribute `mail` stores the domain mail-address, i.e. <user>@<ad-domain>, this is probably an internal address not usable on the internet.
-`proxyAddresses` is the attribute used for all external (internet) mailboxes a uses has. 
+`proxyAddresses` is the attribute used for all external (internet) mailboxes a user has. 
 
 `primaryInternationalISDNNumber` should contain a string `collected_addressbook=<ID>`, this allows Thunderbird to store collected addresses on the SOGO Carddav server.
 
 `primaryTelexNumber` should contain a string: `mailconfig=true|false` to allow per user enable/disable of MailConfig, 
-do note that this attribute is only relevant when MailConfig is configured to use it.
+do note that this attribute is only relevant when MailConfig is configured to check LDAP for this per user setting.
 
-## Group object, Mail - shared mailbox
+#### Group object, Mail - shared mailbox
 The name of a group for a shared-mailbox (`samAccountName`) should start with `mail_box-` to be recognized as a shared-mailbox. 
 
 
@@ -111,9 +111,10 @@ The name of a group for a shared-mailbox (`samAccountName`) should start with `m
 | mail            | 1      | mailbox address                              |
 | member          | 0      | mailbox users                                |
 | info            | 1      | mail-signature organization name             |
+| proxyAddresses  | 0      | duplicate mail to these internal addresses   |
 | telephoneNumber | 1      | mail-signature phone number                  | 
 
-Do not set `proxyAddresses` as it is used for other purposes (by Dovecot, check that manual when it becomes available)
+The attributes `proxyAddresses` is used by Postfix and Dovecot, check [AD-integrated Postfix, Dovecot, SOGO mailserver](../domain_mailserver/README.md))
 
 
 ### 2. Client side configuration on Windows

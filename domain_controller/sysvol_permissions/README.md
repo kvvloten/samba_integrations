@@ -1,4 +1,4 @@
-# More Windows-like sysvol ans LDAP permissions
+# More Windows-like sysvol and LDAP permissions
 
 **DISCLAIMER: Use of anything provided here is at you own risk!**
 
@@ -108,6 +108,7 @@ user:NT Authority\\authenticated users:r-x
 user:${NETBIOS_DOMAIN}\\enterprise admins:rwx
 user:${NETBIOS_DOMAIN}\\group policy creator owners:rwx
 user:NT Authority\\enterprise domain controllers:r-x
+user:${NETBIOS_DOMAIN}\\domain computers:r-x
 group::rwx
 group:NT Authority\\system:rwx
 group:NT Authority\\authenticated users:r-x
@@ -115,6 +116,7 @@ group:${NETBIOS_DOMAIN}\\domain admins:rwx
 group:${NETBIOS_DOMAIN}\\enterprise admins:rwx
 group:${NETBIOS_DOMAIN}\\group policy creator owners:rwx
 group:NT Authority\\enterprise domain controllers:r-x
+group:${NETBIOS_DOMAIN}\\domain computers:r-x
 mask::rwx
 other::---
 default:user::rwx
@@ -124,6 +126,7 @@ default:user:${NETBIOS_DOMAIN}\\domain admins:rwx
 default:user:${NETBIOS_DOMAIN}\\enterprise admins:rwx
 default:user:${NETBIOS_DOMAIN}\\group policy creator owners:rwx
 default:user:NT Authority\\enterprise domain controllers:r-x
+default:user:${NETBIOS_DOMAIN}\\domain computers:r-x
 default:group::---
 default:group:NT Authority\\system:rwx
 default:group:NT Authority\\authenticated users:r-x
@@ -131,6 +134,7 @@ default:group:${NETBIOS_DOMAIN}\\domain admins:rwx
 default:group:${NETBIOS_DOMAIN}\\enterprise admins:rwx
 default:group:${NETBIOS_DOMAIN}\\group policy creator owners:rwx
 default:group:NT Authority\\enterprise domain controllers:r-x
+default:group:${NETBIOS_DOMAIN}\\domain computers:r-x
 default:mask::rwx
 default:other::---
 EOF

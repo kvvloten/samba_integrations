@@ -26,7 +26,7 @@ Set of scripts to ease the life of an operator.
 
 More details are in [README](operations_scripts/README.md) 
 
-## More Windows-like sysvol ans LDAP permissions
+## More Windows-like sysvol and LDAP permissions
 
 Reasons:
 - With these settings Windows will not change permissions when it manages files on sysvol.
