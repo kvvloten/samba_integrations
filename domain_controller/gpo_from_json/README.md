@@ -161,13 +161,11 @@ GPO_UUID="$(samba-tool gpo listall -H /var/lib/samba/private/sam.ldb | \
 N_GPO_FILTER_GROUPS=$(echo "${GPO_FILTER_GROUPS}" | wc -w)
 cat << EOF > /tmp/sysvol_gpo_dirs.acls
 # file: \{${GPO_UUID}\}
-# owner: root
+# owner: ${NETBIOS_DOMAIN}\\domain admins
 # group: ${NETBIOS_DOMAIN}\\domain admins
 user::rwx
-user:root:rwx
 user:NT Authority\\system:rwx
 user:NT Authority\\authenticated users:r-x
-user:${NETBIOS_DOMAIN}\\domain admins:rwx
 user:${NETBIOS_DOMAIN}\\enterprise admins:rwx
 user:${NETBIOS_DOMAIN}\\group policy creator owners:rwx
 user:NT Authority\\enterprise domain controllers:r-x
@@ -190,7 +188,6 @@ group:${NETBIOS_DOMAIN}\\{{ gpo_group }}:r-x
 mask::rwx
 other::---
 default:user::rwx
-default:user:root:rwx
 default:user:NT Authority\\system:rwx
 default:user:NT Authority\\authenticated users:r-x
 default:user:${NETBIOS_DOMAIN}\\domain admins:rwx
@@ -217,7 +214,7 @@ default:other::---
 EOF
 grep '^default' /tmp/sysvol_gpo_dirs.acls | cut -d : -f 2- > /tmp/sysvol_gpo_files.acls
 
-find /var/lib/samba/sysvol/${DNS_DOMAIN}/Policies/\{${GPO_UUID}\} -exec chown root."${NETBIOS_DOMAIN}\\domain admins" {} \;
+find /var/lib/samba/sysvol/${DNS_DOMAIN}/Policies/\{${GPO_UUID}\} -exec chown "${NETBIOS_DOMAIN}\\domain admins"."${NETBIOS_DOMAIN}\\domain admins" {} \;
 find /var/lib/samba/sysvol/${DNS_DOMAIN}/Policies/\{${GPO_UUID}\} -type d -exec setfacl --set-file=/tmp/sysvol_gpo_dirs.acls {} \;
 find /var/lib/samba/sysvol/${DNS_DOMAIN}/Policies/\{${GPO_UUID}\} -type f -exec setfacl --set-file=/tmp/sysvol_gpo_files.acls {} \;
 rm /tmp/sysvol_gpo_dirs.acls
