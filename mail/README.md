@@ -11,20 +11,20 @@ The operating environment for Thunderbird in the domain:
   ___________________       Kerberos         _______________ 
  |  Windows 10       | <------------------> |               |
  |  Domain-member    |                      |  Samba AD-DC  |
- |  _______________  |   Thunderbird GPO    |               |
- | |               | | <------------------- |               |
- | |               | |  (generic settings)   --------------- 
- | |  Thunderbird  | |                       _______________
- | |               | |   Thunderbird MCD    |               |
- | |               | | <------------------- |  MailConfig   |
+ |  _______________  |   Thunderbird GPO    |               | <--+
+ | |               | | <------------------- |               |    |
+ | |               | |  (generic settings)   ---------------     | LDAP-query
+ | |  Thunderbird  | |                       _______________     | 
+ | |               | |   Thunderbird MCD    |               |    |
+ | |               | | <------------------- |  MailConfig   | ---+
  |  ---------------  |  (account settings)  |               |
   -------------------                        ---------------
       |  | |  | |
-      |  | |  | |    Imap4   -----------
-      |  | |  | +---------> |           |
-      |  | |  | Submission  |  Dovecot  |
-      |  | |  +-----------> |           |
-      |  | |                 -----------
+      |  | |  | |    Imap4   ----------- -----------
+      |  | |  | +---------> |           |           |
+      |  | |  | Submission  |  Dovecot  |  Postfix  |
+      |  | |  +-----------> |           |           |
+      |  | |                 ----------- -----------
       |  | |        CalDav   ___________
       |  | +--------------> |           |
       |  |         CardDav  |   SGOO    |                                          
