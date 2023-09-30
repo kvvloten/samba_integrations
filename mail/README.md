@@ -9,9 +9,9 @@ The mailserver solution:
 
 ```text
                                             ---------------         Imap4 + Pwd
-                                           |               | ------------------------> DMZ     
-                                           |               |      Submission + Pwd
-    -----------------                      |               | <------------------------ DMZ
+                                           |        :      | ------------------------> DMZ     
+                                           | Rspamd :      |      Submission + Pwd
+    -----------------                      |........       | <------------------------ DMZ
    |                 |                     |               |                  
    |                 |  Imap4 + Krb5       |               +----------------
    |  Domain-member  | <------------------ |               :                |  Smtp
@@ -57,6 +57,9 @@ The mailserver solution:
                                                      |             |
                                                       ------------- 
 ```
+
+Setup details are in [README](domain_mailserver/README.md) 
+
 
 ## Thunderbird fully automated configuration
 
