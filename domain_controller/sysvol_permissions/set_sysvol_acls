@@ -62,7 +62,7 @@ function propagate_sysvol_gpo_permissions {
             -type d \
             -print \
             -exec chmod "${MODE_FLAGS}" "{}" \; \
-            -exec chown "${OWNER_NAME}"."${GROUP_NAME}" "{}" \; \
+            -exec chown "${OWNER_NAME}":"${GROUP_NAME}" "{}" \; \
             -exec setfacl -b "{}" \; \
             -exec setfacl --set-file="${ACL_DIRS_FILE}" "{}" \;
 
@@ -72,7 +72,7 @@ function propagate_sysvol_gpo_permissions {
             -mindepth 1 \
             -type f \
             -print \
-            -exec chown "${OWNER_NAME}"."${GROUP_NAME}" "{}" \; \
+            -exec chown "${OWNER_NAME}":"${GROUP_NAME}" "{}" \; \
             -exec setfacl -b "{}" \; \
             -exec setfacl --set-file="${ACL_FILES_FILE}" "{}" \;   
     done 

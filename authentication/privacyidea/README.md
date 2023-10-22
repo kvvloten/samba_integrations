@@ -29,13 +29,21 @@ Assumptions:
 - Postgresql is already setup, possible on a different server.
 - Apache2 is setup on the same server as Privacyidea and has a TLS enabled vhost ready to use. 
 
+Privacyidea does not yet support Python 3.11. There are two options:
+- Install Python 3.9 and libapache2-mod-wsgi-py3 from Bullseye and tell Apache to run on 3.9, 
+  which means all wsgi applications on this server will run on Python 3.9.
+- Keep the default Python 3.11 and fix pi-manage by patching the flask_script module 
+
+Although not supported, the latter method seems to work fine, is easier to implement and has a lot less impact 
+on the rest of the machine.
+
 ### Initial setup steps
 
 - Install packages
 
 ```bash
 # Set the version you want to use here:
-PRIVACYIDEA_VERSION=3.8.1
+PRIVACYIDEA_VERSION=3.9
 # Versions can be found at: https://github.com/privacyidea/privacyidea/tags
 
 apt-get install postgresql-client python3-pip python3-venv makepasswd apache2 libapache2-mod-wsgi-py3 jq curl
@@ -51,6 +59,22 @@ pip install -r https://raw.githubusercontent.com/privacyidea/privacyidea/v${PRIV
 pip install privacyidea==${PRIVACYIDEA_VERSION}
 chmod -R privacyidea.www-data /opt/privacyidea/venv
 chmod privacyidea /etc/privacyidea /var/log/privacyidea
+ 
+# Workaround: https://community.privacyidea.org/t/python-3-11-support/3115
+# Flask-script is not python3.11 compatible, it fails with:
+#  Traceback (most recent call last):
+#  File \"/srv/wsgi/lan_encrypted/venvs/pi/bin/pi-manage\", line 150, in <module>
+#    @hsm_manager.command
+#     ^^^^^^^^^^^^^^^^^^^
+#  File \"/srv/wsgi/lan_encrypted/venvs/pi/lib/python3.11/site-packages/flask_script/__init__.py\", line 288, in command
+#    command = Command(func)
+#              ^^^^^^^^^^^^^
+#  File \"/srv/wsgi/lan_encrypted/venvs/pi/lib/python3.11/site-packages/flask_script/commands.py\", line 118, in __init__
+#    args, varargs, keywords, defaults = inspect.getargspec(func)
+#                                        ^^^^^^^^^^^^^^^^^^
+#  AttributeError: module 'inspect' has no attribute 'getargspec'. Did you mean: 'getargs'?"
+#
+sed -i 's/args, varargs, keywords, defaults = inspect.getargspec\(func\)/args, varargs, keywords, defaults, _, _, _ = inspect.getfullargspec(func)/' /opt/privacyidea/venvs/pi/lib/python3.11/site-packages/flask_script/commands.py
 ```
 
 - Copy `logrotate.conf` to `/etc/logrotate.d/privacyidea.conf`

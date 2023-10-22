@@ -20,7 +20,7 @@ The project's github page is [here](https://github.com/ltb-project/self-service-
 **It is not recommended to use a Samba-AD-DC server to setup the Self Service Password!** 
 Self Service Password requires a webserver, which opens up an extra attach-vector to your DCs, therefore it is better to put it on another machine. 
 
-Setup instructions are written for a Debian Bullseye server.
+Setup instructions are written for a Debian Bookworm server.
 
 Assumptions:
 - Apache2 is setup on the same server as Privacyidea and has a TLS enabled vhost ready to use. 

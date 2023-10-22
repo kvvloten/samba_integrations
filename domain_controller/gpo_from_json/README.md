@@ -214,7 +214,7 @@ default:other::---
 EOF
 grep '^default' /tmp/sysvol_gpo_dirs.acls | cut -d : -f 2- > /tmp/sysvol_gpo_files.acls
 
-find /var/lib/samba/sysvol/${DNS_DOMAIN}/Policies/\{${GPO_UUID}\} -exec chown "${NETBIOS_DOMAIN}\\domain admins"."${NETBIOS_DOMAIN}\\domain admins" {} \;
+find /var/lib/samba/sysvol/${DNS_DOMAIN}/Policies/\{${GPO_UUID}\} -exec chown "${NETBIOS_DOMAIN}\\domain admins":"${NETBIOS_DOMAIN}\\domain admins" {} \;
 find /var/lib/samba/sysvol/${DNS_DOMAIN}/Policies/\{${GPO_UUID}\} -type d -exec setfacl --set-file=/tmp/sysvol_gpo_dirs.acls {} \;
 find /var/lib/samba/sysvol/${DNS_DOMAIN}/Policies/\{${GPO_UUID}\} -type f -exec setfacl --set-file=/tmp/sysvol_gpo_files.acls {} \;
 rm /tmp/sysvol_gpo_dirs.acls

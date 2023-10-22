@@ -36,7 +36,7 @@ The operating environment for described configuration:
 
 ## Setup
 
-Setup instructions are written for a Debian Bullseye server.
+Setup instructions are written for a Debian Bookworm server.
 
 
 Assumptions:
@@ -238,7 +238,7 @@ pip install python-ldap
 mkdir /opt/mail/mailconfig/wsgi/thunderbird
 mkdir /opt/mail/mailconfig/wsgi/signatures
 mkdir -m 0750 /opt/mail/mailconfig/thunderbird_cache
-chown wsgi-mailconfig.www-data /opt/mail/mailconfig/thunderbird_cache
+chown wsgi-mailconfig:www-data /opt/mail/mailconfig/thunderbird_cache
 ```
 
 - Copy files from `wsgi` to `/opt/mail/mailconfig/wsgi`:
@@ -462,12 +462,12 @@ a2enmod dav_fs
 
 mkdir /etc/systemd/system/apache2.service.d
 mkdir -m 0750 /etc/apache2/conf-available/include
-chown www-data.www-data /etc/apache2/conf-available/include
+chown www-data:www-data /etc/apache2/conf-available/include
 
 mkdir -m 0755 /var/lib/filelink
 
 mkdir -m 0755 /var/www/davfs
-chown www-data.www-data /var/www/davfs
+chown www-data:www-data /var/www/davfs
 ```
 
 - Copy `vhost_webdav.conf` to `/etc/apache2/conf-available/vhost_webdav.conf`

@@ -31,9 +31,8 @@ A description of how to setup Privacyidea with Samba backend is [here](../privac
 
 ## Setup
 
-Setup instructions are written for a Debian Bullseye server.
+Setup instructions are written for a Debian Bookworm server.
 
-In Bullseye `libpam-python` is Python-2 based which adds a lot of complexity to the setup of the venv (in Bookworm it is Python-3). 
 
 The setup partially overlaps with [Openvpn with Privacyidea](../openvpn_privacyidea/README.md), the sections 
 'Create a python2 venv' and 'Install and configure privacyidea_pam' can be skipped here when they are already setup.
@@ -70,28 +69,21 @@ pam-auth-update --remove ldap
   - Set `<PRIVACYIDEA_BASE_URL>` to the URL of Privacyidea
 
 
-- Create a python2 venv (skip this if already setup for OpenVPN + Privacyidea):
+- Create a python venv and install privacyidea_pam (skip this if already setup for OpenVPN + Privacyidea):
 
 ```bash
-apt-get install python2 curl
-mkdir -p /opt/privacyidea_pam/get_pip_root
-curl -s https://bootstrap.pypa.io/pip/2.7/get-pip.py > /opt/privacyidea_pam/get-pip.py
-python2 /opt/privacyidea_pam/get-pip.py --no-python-version-warning --no-warn-script-location --prefix /opt/privacyidea_pam/get_pip_root
-PYTHONPATH=/opt/privacyidea_pam/get_pip_root/lib/python2.7/site-packages \
-   /opt/privacyidea_pam/get_pip_root/bin/pip2 install --prefix=/opt/privacyidea_pam/get_pip_root virtualenv
+# If a python2 venv was setup for Bullseye, remove that first:
+rm -r /opt/privacyidea_pam
+
+# Setup for Bookworm
+python3 -m venv /opt/privacyidea_pam
 source /opt/privacyidea_pam/bin/activate
-pip install pip setuptools wheel --upgrade
-```
+pip install pip setuptool wheel --upgrade 
+pip install requests certifi chardet idna passlib requests urllib3
+curl -s https://raw.githubusercontent.com/privacyidea/pam_python/master/privacyidea_pam.py > /opt/privacyidea_pam/lib/python3.11/site-packages/privacyidea_pam.py
 
-
-- Install and configure privacyidea_pam (skip this if already setup for OpenVPN + Privacyidea)
-
-```bash
-apt-get install libpam-python sqlite3 curl
-source /opt/privacyidea_pam/bin/activate
-pip install -r https://raw.githubusercontent.com/privacyidea/pam_python/master/requirements.txt
-curl -s https://raw.githubusercontent.com/privacyidea/pam_python/master/privacyidea_pam.py > /opt/privacyidea_pam/lib/python2.7/site-packages/privacyidea_pam.py
-cd /opt/privacyidea_pam/lib/python2.7/site-packages
+# Patch privacyidea_pam to work in a venv
+cd /opt/privacyidea_pam/lib/python3.11/site-packages
 cat << EOF | patch -p1
 --- a/privacyidea_pam.py    2022-03-24 11:55:05.601712742 +0100
 +++ b/privacyidea_pam.py    2022-03-24 17:11:27.569721976 +0100
@@ -109,8 +101,9 @@ cat << EOF | patch -p1
  import syslog
 EOF
 cd -
-mkdir /etc/privacyidea
 
+# Configurions
+mkdir /etc/privacyidea
 touch /etc/privacyidea/pam.sqlite
 chmod 0600 /etc/privacyidea/pam.sqlite
 cat << EOF | sqlite3 /etc/privacyidea/pam.sqlite

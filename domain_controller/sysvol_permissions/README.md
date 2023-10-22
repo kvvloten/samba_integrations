@@ -4,7 +4,9 @@
 
 Reasons:
 - With these settings Windows will not change permissions when it manages files on sysvol.
-- GPOs can be managed from Windows by members of `Group Policy Creator Owners` instead of `Domain Admins`, which means login for `Domain Admins` can be disabled on Windows clients.  
+- All GPOs can be managed from Windows by members of `Group Policy Creator Owners` instead of `Domain Admins`, 
+  which means login for `Domain Admins` can be disabled on Windows clients. This is a slightly permission for  
+  `Group Policy Creator Owners`  than Windows has, where this group can only manage GPOs create by the group.
 
 NOTE: Never run `samba-tool ntacl sysvolreset` because it will reset all filesystem ACLs to Samba's default and hence undo the changes described here.
 

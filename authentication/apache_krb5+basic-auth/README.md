@@ -21,7 +21,7 @@ Authorization uses LDAP in both cases, it reads nested groups to check group mem
 
 ## Setup
 
-Setup instructions are written for a Debian Bullseye server.
+Setup instructions are written for a Debian Bookworm server.
 
 In Bullseye `libpam-python` is Python-2 based which adds a lot of complexity to the setup of the venv (in Bookworm it is Python-3). 
 
@@ -55,7 +55,7 @@ done
 mkdir /etc/keytab
 mkdir /etc/systemd/system/apache2.service.d
 mkdir -m 0750 /etc/apache2/conf-available/include
-chown www-data.www-data /etc/apache2/conf-available/include
+chown www-data:www-data /etc/apache2/conf-available/include
 
 # Generate a SESSION_COOKIE_PASSPHRASE, use it on all apache servers with kerberos authentication in the domain
 makepasswd --chars=32
@@ -87,7 +87,7 @@ makepasswd --chars=32 | base64
 
 ```bash
 chmod 0640 /etc/keytab/<SERVICE-ACCOUNT NAME>.keytab
-chown root.www-data /etc/keytab/<SERVICE-ACCOUNT NAME>.keytab
+chown root:www-data /etc/keytab/<SERVICE-ACCOUNT NAME>.keytab
 
 systemctl restart apache2
 ```

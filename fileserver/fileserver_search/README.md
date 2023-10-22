@@ -40,7 +40,7 @@ All together this is quite complex and hence not recommended without enough know
 
 ## Setup
 
-Setup instructions are written for a Debian Bullseye server.
+Setup instructions are written for a Debian Bookworm server.
 
 Design decisions:
 - Security is part of the design and of the setup
@@ -198,7 +198,7 @@ makepasswd --chars=32
 CLUSTER_NAME="<CLUSTERNAME>"
 
 # Fix owners and permissions
-chown -R opensearch.opensearch /etc/opensearch 
+chown -R opensearch:opensearch /etc/opensearch 
 chmod 0600 /etc/opensearch/opensearch-security/*
 
 OPENSEARCH_JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64 /usr/share/opensearch/plugins/opensearch-security/tools/securityadmin.sh \
@@ -388,7 +388,7 @@ usermod -s "/usr/sbin/nologin" fscrawler
   - Determine the basename of the share-path, if the path is `/the/path/to/my/share`, the basename is `share`. 
   - `mkdir /opt/fscrawler/etc/samba_smb_<BASENAME-OF-SHARE>` 
   - Copy `fscrawler/share_settings.yml` to `/opt/fscrawler/etc/samba_smb_<BASENAME-OF-SHARE>/_share_settings.yml`
-  - `chown fscrawler.fscrawler /opt/fscrawler/etc/samba_smb_<BASENAME-OF-SHARE>/_share_settings.yml`
+  - `chown fscrawler:fscrawler /opt/fscrawler/etc/samba_smb_<BASENAME-OF-SHARE>/_share_settings.yml`
   - Edit `/opt/fscrawler/etc/samba_smb/_share_settings.yml`:
     - Replace `<BASENAME-OF-SHARE>` with the basename of the share-path
     - Replace `"<PATH-OF-SHARE>` with the share-path
