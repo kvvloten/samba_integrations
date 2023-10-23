@@ -1,0 +1,101 @@
+######################################################################
+#
+#   As of 2.0.0, FreeRADIUS supports virtual hosts using the
+#   "server" section, and configuration directives.
+#
+#   Virtual hosts should be put into the "sites-available"
+#   directory.  Soft links should be created in the "sites-enabled"
+#   directory to these files.  This is done in a normal installation.
+#
+#   If you are using 802.1X (EAP) authentication, please see also
+#   the "inner-tunnel" virtual server.  You will likely have to edit
+#   that, too, for authentication to work.
+#
+######################################################################
+
+server default {
+    listen {
+        type = auth
+        ipaddr = *
+        port = 1812
+        limit {
+              max_connections = 16
+              lifetime = 0
+              idle_timeout = 30
+        }
+    }
+    listen {
+        ipaddr = *
+        port = 1813
+        type = acct
+        limit {
+              max_connections = 16
+              lifetime = 0
+              idle_timeout = 30
+        }
+    }
+    # IPv6 versions of the above - read their full config to understand options
+    listen {
+        type = auth
+        ipv6addr = ::  # any.  ::1 == localhost
+        port = 1812
+        limit {
+              max_connections = 16
+              lifetime = 0
+              idle_timeout = 30
+        }
+    }
+    listen {
+        ipv6addr = ::
+        port = 1813
+        type = acct
+        limit {
+              max_connections = 16
+              lifetime = 0
+              idle_timeout = 30
+        }
+    }
+    authorize {
+        filter_username
+        preprocess
+        eap {
+            ok = return
+            #updated = return
+        }
+        expiration
+        logintime
+    }
+    authenticate {
+        eap
+    }
+    preacct {
+        preprocess
+        acct_unique
+    }
+    accounting {
+        detail
+        attr_filter.accounting_response
+    }
+    post-auth {
+        update {
+            &reply: += &session-state:
+        }
+        # For Exec-Program and Exec-Program-Wait
+        exec
+        #  Remove reply message if the response contains an EAP-Message
+        remove_reply_message_if_eap
+        Post-Auth-Type REJECT {
+            attr_filter.access_reject
+            # Insert EAP-Failure message if the request was rejected by policy instead of because of an authentication failure
+            eap
+            #  Remove reply message if the response contains an EAP-Message
+            remove_reply_message_if_eap
+        }
+    }
+    post-proxy {
+        #  You MUST also use the 'nostrip' option in the 'realm' configuration.  Otherwise, the User-Name attribute
+        #  in the proxied request will not match the user name  hidden inside of the EAP packet, and the end server will
+        #  reject the EAP request.
+        eap
+    }
+}

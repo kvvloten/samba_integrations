@@ -142,3 +142,25 @@ Authorization uses LDAP in both cases, it reads nested groups to check group mem
 
 
 Setup details are in [README](apache_krb5+basic-auth/README.md) 
+
+
+# Enterprise-WIFI connecting with AD machine credentials
+
+Automatically connect to company wifi with AD machine credentials before users login.
+
+```text
+                                        -------- 
+  ___________________                  | Wifi   |             ---------------
+ |  Windows 10       |                 | Access |            | Linux         |
+ |  Domain-member    |   802.11/EAP    | Point  |   Radius   | Domain-member |      
+ |        --------   | \............/  |        | \......../ |               |
+ |       |  Wifi  |  |---------- PEAP -- + -- MSCHAPv2 ----->|  Freeradius   |
+ |       | 802.1x |  |  ............   |        |  ........  |      V        |
+ |        --------   | /            \  |        | /        \ |   ntlm_auth   |           --------------- 
+ |                   |                 |        |            |      V        |          |               |
+ |                   |                  --------             |   Winbind     | -------> |  Samba AD-DC  |
+ |                   |                                       |               |          |               |
+  -------------------                                         ---------------            --------------- 
+```
+
+Setup details are in [README](enterprise_wifi/README.md) 

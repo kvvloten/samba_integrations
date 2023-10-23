@@ -1,0 +1,67 @@
+######################################################################
+#
+# This is a virtual server that handles *only* inner tunnel
+# requests for EAP-TTLS and PEAP types.
+#
+######################################################################
+
+server inner-tunnel {
+    listen {
+           ipaddr = 127.0.0.1
+           port = 18120
+           type = auth
+    }
+    authorize {
+        filter_username
+        mschap
+        update control {
+            &Proxy-To-Realm := LOCAL
+        }
+        eap {
+            ok = return
+        }
+        expiration
+        logintime
+    }
+    authenticate {
+        ntlm_auth
+        Auth-Type MS-CHAP {
+            mschap
+        }
+        mschap
+        eap
+    }
+    session {
+        radutmp
+    }
+    post-auth {
+        #  Instead of "use_tunneled_reply", change this "if (0)" to an "if (1)".
+        if (0) {
+            #  These attributes are for the inner-tunnel only, and MUST NOT be copied to the outer reply.
+            update reply {
+                User-Name !* ANY
+                Message-Authenticator !* ANY
+                EAP-Message !* ANY
+                Proxy-State !* ANY
+                MS-MPPE-Encryption-Types !* ANY
+                MS-MPPE-Encryption-Policy !* ANY
+                MS-MPPE-Send-Key !* ANY
+                MS-MPPE-Recv-Key !* ANY
+            }
+            #  Copy the inner reply attributes to the outer session-state list.  The post-auth policy will take
+            #  care of copying the outer session-state list to the outer reply.
+            update {
+                &outer.session-state: += &reply:
+            }
+        }
+        Post-Auth-Type REJECT {
+            attr_filter.access_reject
+            update outer.session-state {
+                &Module-Failure-Message := &request:Module-Failure-Message
+            }
+        }
+    }
+    post-proxy {
+        eap
+    }
+}

@@ -13,6 +13,7 @@
 - Password-notifier - cron script to send notification mails on soon expiring passwords
 - Self-service-password - self-service password change web-interface
 - Apache-Kerberos+Basic-auth - Apache with Kerberos and Basic authentication fallback to Samba-AD
+- Enterprise-WIFI - Automatically connect to company wifi with AD machine credentials before users login
 
 More details are in [README](authentication/README.md)
 

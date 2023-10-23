@@ -40,6 +40,7 @@ Setup instructions are written for a Debian Bookworm server.
 
 
 Assumptions:
+- Windows 10 machine is joined as a domain-member
 - User accounts are administrated in Samba-AD.
 - Users use `sAMAccountName` to login (i.e. not `mail` nor `userPrincipalName`).
 - Users authenticate with their Kerberos-ticket whenever possible (TB addons cannot use Kerberos, hence Filelink uses a password).

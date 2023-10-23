@@ -79,8 +79,8 @@ makepasswd --chars=32 | base64
 
 - Copy `krb5.conf` to `/etc/krb5.conf`
 - Edit `/etc/krb5.conf`:
-  - Replace `SAMBA-REALM>` with the realm of your AD-domain
-  - Replace `DNS-DOMAIN>`with the dns domain-name of your AD-domain
+  - Replace `<SAMBA-REALM>` with the realm of your AD-domain
+  - Replace `<DNS-DOMAIN>`with the dns domain-name of your AD-domain
 
 - Copy `vhost_krb5.conf` to `/etc/apache2/conf-available/vhost_krb5.conf`
 - In the vhost that will contain protected websites add a line: `Include /etc/apache2/conf-available/vhost_krb5.conf`
