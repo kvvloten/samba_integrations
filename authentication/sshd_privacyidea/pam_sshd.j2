@@ -13,9 +13,6 @@ account    required     pam_nologin.so
 # access limits that are hard to express in sshd_config.
 # account  required     pam_access.so
 
-account   [success=1 default=ignore]   pam_access.so accessfile=/etc/security/pam_access-lan_lo.conf
-account   sufficient                   pam_ldap.so config=/etc/security/pam_ldap_sshd.conf
-
 # Standard Un*x authorization.
 @include common-account
 

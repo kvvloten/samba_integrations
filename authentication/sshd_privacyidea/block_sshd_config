@@ -8,5 +8,6 @@
 
 # A negative test never matches, add a term that yields a positive match
 Match Address !<LOCAL_NETWORK_CIDR>,*
+    AllowGroups <PERMISSION-GROUP-INTERNET>
     PermitRootLogin no
     Banner /etc/ssh/sshd_banner.txt

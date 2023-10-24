@@ -38,9 +38,11 @@ The setup partially overlaps with [Openvpn with Privacyidea](../openvpn_privacyi
 'Create a python2 venv' and 'Install and configure privacyidea_pam' can be skipped here when they are already setup.
 
 Assumptions:
-- Samba-AD has a (nested-) group `PERMISSION-GROUP` that contains users with permission to login from internet on this server. 
+- Samba-AD has a (nested-) group `PERMISSION-GROUP-INTERNET` that contains users with permission to login from internet on this server. 
 - The users to login are known / can be resolved on the host (e.g. through winbind-nss)
 - The users to login have a home-directory (or pam-mkhomedir should be added to create it) 
+- The server is joined as a domain-member using Samba tooling (Winbind).
+- The server has nsswitch.conf configured so that user and group lookups to the AD-domain succeed (via libnss-winbind).
 
 ### Setup steps
 
@@ -57,6 +59,7 @@ pam-auth-update --remove ldap
 - Append `block_sshd_config` at the end of `/etc/ssh/sshd_config`
 - Edit `/etc/ssh/sshd_config`:
   - Change `<LOCAL_NETWORK_CIDR>` to the subnet-cidr of your local network
+  - Change `<PERMISSION-GROUP-INTERNET>` to the AD-group `PERMISSION-GROUP-INTERNET` 
 
 
 - Copy `pam_access-lan_lo.conf` to `/etc/security/pam_access-lan_lo.conf`
@@ -124,16 +127,15 @@ samba-tool user setexpiry --noexpiry <SERVICE-ACCOUNT NAME>
 samba-tool user show <SERVICE-ACCOUNT NAME>
 ```
 
-- Copy `pam_ldap.conf` to `/etc/security/pam_ldap_sshd.conf`
-- Update permissions: `chmod 0640 /etc/security/pam_ldap_sshd.conf`
-- Edit `/etc/security/pam_ldap_sshd.conf`:
-  - Set DC hostnames in `uri`
-  - Set DN of the SERVICE-ACCOUNT in `binddn`
-  - Set password of the SERVICE-ACCOUNT in `bindpw`
-  - Set base-DN in `base`
-  - Set DN of the PERMISSION-GROUP in `pam_filter`
+On upgrading from Bullseye:
+a per pam-service configuration is no longer supported, the global nslcd.conf is what is left, 
+but it already configured for openvpn (see [Openvpn with Privacyidea](../openvpn_privacyidea/README.md)).    
 
+- Remove the obsolete pam-service config file: `rm /etc/security/pam_ldap_sshd.conf` 
 
-- Restart sshd
+Instead, the server should be made domain-member with Winbind tools and AD-group lookups can be done directly by sshd. 
+This is already configured by one of the previous steps 
+
+- Restart sshd: `ssytemctl restart sshd`
 
 Once you have setup your MFA-token in Privacyidea, you are ready to login to ssh with MFA from internet 

@@ -141,17 +141,25 @@ samba-tool user setexpiry --noexpiry <SERVICE-ACCOUNT NAME>
 samba-tool user show <SERVICE-ACCOUNT NAME>
 ```
 
-- Copy `pam_ldap.conf` to `/etc/security/pam_ldap_openvpn.conf`
-- Update permissions: `chmod 0640 /etc/security/pam_ldap_openvpn.conf`
-- Edit `/etc/security/pam_ldap_openvpn.conf`:
+- On upgrading from Bullseye:
+  a per pam configuration is no longer supported, the global nslcd.conf is what is left,   
+  remove `/etc/security/pam_ldap_openvpn.conf` 
+
+- Copy `nslcd.conf` to `/etc/nslcd.conf`
+- Update permissions: `chmod 0640 /etc/nslcd.conf`
+- Update group: `chgrp nslcd /etc/nslcd.conf`
+- Edit `/etc/nslcd.conf`:
   - Set DC hostnames in `uri`
   - Set DN of the SERVICE-ACCOUNT in `binddn`
   - Set password of the SERVICE-ACCOUNT in `bindpw`
   - Set base-DN in `base`
-  - Set DN of the PERMISSION-GROUP in `pam_filter`
+  - Set DN of the PERMISSION-GROUP in `filter passwd`
 
-
-- Restart openvpn
+- Restart services:
+```bash
+systemctl restart nslcd
+systemctl restart openvpn 
+```
 
 ### OpenVPN Windows client configuration
 
