@@ -1,14 +1,20 @@
 #!/bin/bash
 # http://www.selfadsi.org/ads-attributes/user-userAccountControl.htm#UF_SERVER_TRUST_ACCOUNT
 
-if [[ $# -ne 2 ]] || ! echo "computer user" | grep -wq "$1"; then
-    echo "Usage: $0 <user|computer> <account-name>"
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <account-name>"
     exit 1
 fi
 
-ACCOUNT_TYPE=$1
-ACCOUNT_NAME=$2
-UAC=$(samba-tool "${ACCOUNT_TYPE}" show "${ACCOUNT_NAME}"  2> /dev/null | grep 'userAccountControl' | awk -F ': ' '{print $2}')
+ACCOUNT_NAME=$1
+BASE_DN="DC=$(dnsdomainname | sed 's/\./,DC=/g')"
+
+UAC="$(ldbsearch -H /var/lib/samba/private/sam.ldb -b "${BASE_DN}" "(&(objectClass=user)(sAMAccountName=${ACCOUNT_NAME}))" \
+               msDS-User-Account-Control-Computed userAccountControl 2> /dev/null |
+               awk -F ': ' 'BEGIN{uac=0} \
+                            /^msDS-User-Account-Control-Computed: /{uac=uac+$2} \
+                            /^userAccountControl: /{uac=uac+$2}
+                            END{print uac}')"
 
 echo "User account control value: ${UAC}"
 

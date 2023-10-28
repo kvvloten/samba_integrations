@@ -8,7 +8,7 @@
   "TIMEOUT": 5,
   "CACHE_TIMEOUT": 120,
   "SIZELIMIT": 500,
-  "LDAPSEARCHFILTER": "(sAMAccountName=*)(objectClass=user)",
+  "LDAPSEARCHFILTER": "(sAMAccountName=*)(objectClass=user)(objectCategory=person)(!(userAccountControl:1.2.840.113556.1.4.803:=2))(!(msDS-User-Account-Control-Computed:1.2.840.113556.1.4.803:=8388608))",
   "SCOPE": "SUBTREE",
   "LOGINNAMEATTRIBUTE": "sAMAccountName",
   "MULTIVALUEATTRIBUTES": ["mobile"],
