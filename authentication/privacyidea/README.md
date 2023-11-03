@@ -209,6 +209,13 @@ curl -s --request POST \
 
 The connection between Privacyidea and Samba is made. Users can login on Privacyidea with their domain user-id and password.
 
+Note:
+The current LDAP search-filter in `resolvers_users.json` allows users in specified BaseDN to login when they are not disabled.
+The filter does not block users with an expired Samba password. The reason is twofold, Samba does not supply filterable 
+information on password expiry and Privacyidea has its own (MFA-) authentication mechanism and does not use Samba for that.
+
+There is a workaround available, drop me an email in case you do want to block expired accounts in Privacyidea.  
+
 ### Next steps:
 
 - You probably want to setup a user selfservice policy, so that users can create MFA tokens of your choice.
