@@ -8,18 +8,18 @@ Automatically connect to company wifi with AD machine credentials before users l
 The operating environment for described configuration:
 
 ```text
-                                        -------- 
-  ___________________                  | Wifi   |             ---------------
- |  Windows 10       |                 | Access |            | Linux         |
- |  Domain-member    |   802.11/EAP    | Point  |   Radius   | Domain-member |      
- |        --------   | \............/  |        | \......../ |               |
- |       |  Wifi  |  |---------- PEAP -- + -- MSCHAPv2 ----->|  Freeradius   |
- |       | 802.1x |  |  ............   |        |  ........  |      V        |
- |        --------   | /            \  |        | /        \ |   ntlm_auth   |           --------------- 
- |                   |                 |        |            |      V        |          |               |
- |                   |                  --------             |   Winbind     | -------> |  Samba AD-DC  |
- |                   |                                       |               |          |               |
-  -------------------                                         ---------------            --------------- 
+                                          -------- 
+  _____________________                  | Wifi   |             ---------------
+ |  Windows 10 / Linux |                 | Access |            | Linux         |
+ |  Domain-member      |   802.11/EAP    | Point  |   Radius   | Domain-member |      
+ |          --------   | \............/  |        | \......../ |               |
+ |         |  Wifi  |  |---------- PEAP -- + -- MSCHAPv2 ----->|  Freeradius   |
+ |         | 802.1x |  |  ............   |        |  ........  |      V        |
+ |          --------   | /            \  |        | /        \ |   ntlm_auth   |           --------------- 
+ |                     |                 |        |            |      V        |          |               |
+ |                     |                  --------             |   Winbind     | -------> |  Samba AD-DC  |
+ |                     |                                       |               |          |               |
+  ---------------------                                         ---------------            --------------- 
 ```
 
 ## Setup
@@ -27,7 +27,8 @@ The operating environment for described configuration:
 Setup instructions are written for a Debian Bookworm server.
 
 Assumptions:
-- Windows 10 machine is joined as a domain-member
+- Windows 10 machine is joined as a domain-member or Linux machine joined as domain-member using Samba Winbind
+- On Linux domain-members the network should be managed by NetworkManager
 - The server for Freeradius is joined as a domain-member using Samba tooling (Winbind).
 - Valid certificates are used on the domain controllers and on the Freeradius server.
 - Samba-AD has a (nested-) group `PERMISSION-GROUP` that contains computers with permission to use enterprise-wifi 
@@ -42,6 +43,7 @@ The setup involves:
 1. Freeradius
 2. Wifi Access Point
 3. Client - Windows 10 
+4. Client - Linux 
 
 The aim is to be able to automate everything. Therefore manual actions, especially in UIs, are avoided. 
 The instructions below are an extracted from Ansible code.
@@ -224,7 +226,7 @@ openssl x509 -noout -fingerprint -sha1 -inform pem -in ${CERT_FILE} | awk -F= '{
 # The fingerprint should be put in the Windows wifi profile, see <!--CA_CERT_FINGERPRINT--> below
 
 
-SSID_NAME="<SSID>"  # Put the ssid of the enterprise wifi network here
+SSID_NAME="<SSID-NAME>"  # Put the ssid of the enterprise wifi network here
 echo -n "${SSID_NAME}" | od -A n -t x1 | awk '{gsub(/ /,"",$0);print toupper($0)}'
 
 # The hexadecimal representation of the SIDD should be put in the Windows wifi profile, see <!--SSID-HEX--> below
@@ -244,11 +246,11 @@ Continue on the Windows machine:
 
 ```cmd
 rem Put the name of the SSID here:
-set SSID=<SIDD-NAME>
+set SSID_NAME=<SIDD-NAME>
 set WLAN_PROFILE=C:\ProgramData\WLAN\wlan_profile.xml
 
 netsh wlan add profile filename=%WLAN_PROFILE% user=all
-netsh wlan set profileparameter name=%SSID% connectionmode=auto
+netsh wlan set profileparameter name=%SSID_NAME% connectionmode=auto
 ```
 
 2. The second method is to create a GPO and filter it to the group `PERMISSION-GROUP`.
@@ -265,3 +267,79 @@ however there are some adjustments:
 - On the `Security` TAB, set the `Authentication Method` to `Computer authentication` 
 - On `Advanced security settins`, `Single Sign On` will be greyed out due to computer authentication, this is expected
 - On `Protected EAP Properties`, set `Notifications before connecting` to `Do not ask user to authorize new servers or trusted CAs`
+
+
+### 4. Client - Linux 
+
+Note: Locations of files are based on Debian Bookworm 
+
+Ensure the machine can validate the certificate used by Freeradius, i.e. copy the ca-certificate to `/etc/ssl/certs` as `ca.pem`
+
+Run the code below to complete the setup:
+
+```bash
+SSID_NAME="<SIDD-NAME>"  # Put the ssid of the enterprise wifi network here
+PRINCIPAL="host/$(hostname -f)"  # The principal of the machine account
+
+curl -s https://gitlab.com/samba-team/samba/raw/v4182-stable/source4/scripting/bin/machineaccountpw > /usr/local/sbin/machineaccountpw
+chmod 750 /usr/local/sbin/machineaccountpw
+
+MACHINE_PW="$(/usr/local/sbin/machineaccountpw)"
+UUID="$(uuidgen)"
+
+# Create the configuration for NetworkManager 
+mkdir /etc/NetworkManager/system-connections
+cat << EOF > /etc/NetworkManager/system-connections/wifi_ep-composers.nmconnection
+[connection]
+id=Domain Enterprise Wifi
+uuid=${UUID}
+type=wifi
+
+[wifi]
+mode=infrastructure
+ssid=${SSID_NAME}
+
+[wifi-security]
+key-mgmt=wpa-eap
+
+[802-1x]
+ca-cert=/etc/ssl/certs/ca.pem
+eap=peap;
+identity=${PRINCIPAL}
+password=${MACHINE_PW}
+phase2-auth=mschapv2
+
+[ipv4]
+method=auto
+
+[ipv6]
+addr-gen-mode=stable-privacy
+method=auto
+
+[proxy]
+EOF
+systemctl restart NetworkManager
+
+# Ensure the password gets updated within a minute after Winbind decided to update it 
+cat << EOF > /usr/local/sbin/nm_ep_wifi_password_change
+#!/bin/bash
+
+# When running from cron PATH is not set
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+SECRETS_FILE_TIMESTAMP="$(stat -c %Z /var/lib/samba/private/secrets.tdb)"
+NM_FILE_TIMESTAMP="$(stat -c %Z /etc/NetworkManager/system-connections/wifi_ep-composers.nmconnection)"
+CURRENT_TIMESTAMP=$(date +%s)
+INTERVAL=60
+
+[[ ${SECRETS_FILE_TIMESTAMP} -gt ${NM_FILE_TIMESTAMP} ]] ||
+ [[ ${SECRETS_FILE_TIMESTAMP} -gt $((CURRENT_TIMESTAMP - INTERVAL)) ]] || exit 0 
+
+MACHINE_PW="$(machineaccountpw)"
+sed -i "s/password=.+/password=${MACHINE_PW}/" /etc/NetworkManager/system-connections/wifi_ep-composers.nmconnection
+systemctl reload NetworkManager.service
+EOF
+chmod 750 /usr/local/sbin/nm_ep_wifi_password_change
+
+echo "* * * * * /usr/local/sbin/nm_ep_wifi_password_change > /dev/null 2>&1" > /etc/cron.d/nm_ep_wifi_password_change
+```
