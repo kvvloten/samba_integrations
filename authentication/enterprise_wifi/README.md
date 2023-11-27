@@ -87,14 +87,14 @@ rm /etc/freeradius/3.0/sites-enabled/default
 rm /etc/freeradius/3.0/sites-enabled/inner-tunnel
 ```
 
-- Copy `proxy.conf` to `/etc/freeradius/3.0/proxy.conf`
+- Copy `radius/proxy.conf` to `/etc/freeradius/3.0/proxy.conf`
 - Edit: `/etc/freeradius/3.0/proxy.conf`:
   - Replace `<DNS-DOMAIN>`with the dns domain-name of your AD-domain
 
-- Copy `site-samba_default` to `/etc/freeradius/3.0/sites-available/samba_default`
-- Copy `site-samba_inner-tunnel` to `/etc/freeradius/3.0/sites-available/samba_inner-tunnel`
+- Copy `radius/site-samba_default` to `/etc/freeradius/3.0/sites-available/samba_default`
+- Copy `radius/site-samba_inner-tunnel` to `/etc/freeradius/3.0/sites-available/samba_inner-tunnel`
 
-- Copy `mod-eap` to `/etc/freeradius/3.0/mods-available/eap`
+- Copy `radius/mod-eap` to `/etc/freeradius/3.0/mods-available/eap`
 - Edit: `/etc/freeradius/3.0/mods-available/eap`:
   - Replace `<SSL_KEY_FILENAME>`with the filename of the ssl private key for this server
   - Replace `<SSL_CERT_FILENAME>`with the filename of the ssl certificate for this server
@@ -235,7 +235,7 @@ echo -n "${SSID_NAME}" | od -A n -t x1 | awk '{gsub(/ /,"",$0);print toupper($0)
 Continue on the Windows machine:
 
 - Create the directory `C:\ProgramData\WLAN`
-- Copy `wlan_profile.xml` to `C:\ProgramData\WLAN\wlan_profile.xml`
+- Copy `windows/wlan_profile.xml` to `C:\ProgramData\WLAN\wlan_profile.xml`
 - Edit `C:\ProgramData\WLAN\wlan_profile.xml`:
   - Replace `<!--SSID-NAME-->` with the SSID of the wifi-network
   - Replace `<!--SSID-HEX-->` with the hexadecimal representation of the SSID
@@ -267,6 +267,55 @@ however there are some adjustments:
 - On the `Security` TAB, set the `Authentication Method` to `Computer authentication` 
 - On `Advanced security settins`, `Single Sign On` will be greyed out due to computer authentication, this is expected
 - On `Protected EAP Properties`, set `Notifications before connecting` to `Do not ask user to authorize new servers or trusted CAs`
+
+
+#### Mutually exclusive wired- and wireless network connection
+
+As a bonus you can make wired-network and wifi mutually exclusive, which will cause the machine to switch automatically 
+to wired when a cable is connected and to enterprise-wifi (when on premise) when the cable is disconnected.
+
+Install NSSM using Chocolatey
+
+```powershell
+# Install Chocolatey 
+Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+# Install NSSM
+choco install nssm
+```
+
+- Create the directory `C:\ProgramData\WLAN`
+- Copy `windows\WLANManager.ps1` to `C:\ProgramData\WLAN`
+
+If you are using a GPO to manage the WLAN-profile, then disable or remove line 70 (`Configure-DomainWLAN`) in `WLANManager.ps1`
+
+Configure and start WLANManager as a service using NSSM:
+
+```cmd
+set NSM_CMD=C:\ProgramData\chocolatey\lib\NSSM\tools\nssm.exe
+
+rem Configure the WLANManager service:
+
+%NSSM_CMD% install WLANManager C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+%NSSM_CMD% set WLANManager AppParameters ^"-NoProfile -ExecutionPolicy Bypass -Command ^\^"^& 'c:^\ProgramData^\wlan^\WLANManager.ps1'^\^"^"
+%NSSM_CMD% set WLANManager AppDirectory C:\Windows\System32\WindowsPowerShell\v1.0 
+%NSSM_CMD% set WLANManager AppExit Default Restart
+%NSSM_CMD% set WLANManager AppStdoutCreationDisposition 2
+%NSSM_CMD% set WLANManager AppStderrCreationDisposition 2
+%NSSM_CMD% set WLANManager AppRotateFiles 1
+%NSSM_CMD% set WLANManager AppRotateSeconds 86400
+%NSSM_CMD% set WLANManager AppRotateBytes 104858
+%NSSM_CMD% set WLANManager DisplayName "Composers WLAN Manager"
+%NSSM_CMD% set WLANManager ObjectName LocalSystem
+%NSSM_CMD% set WLANManager Start SERVICE_AUTO_START
+%NSSM_CMD% set WLANManager Type SERVICE_WIN32_OWN_PROCESS
+
+rem Start the WLANManager service:
+%NSSM_CMD% start WLANManager
+```
+
+If you run a DHCP server it can be setup to use static DHCP for the machine and the return the same IP-address for both 
+the wired and wireless MAC-addresses of the machine. Not only will the machine switch fluently between wired and 
+enterprise-wifi, but since the IP-address remains the same any session will survive the switch !
 
 
 ### 4. Client - Linux 
@@ -344,6 +393,8 @@ chmod 750 /usr/local/sbin/nm_ep_wifi_password_change
 echo "* * * * * /usr/local/sbin/nm_ep_wifi_password_change > /dev/null 2>&1" > /etc/cron.d/nm_ep_wifi_password_change
 ```
 
+#### Mutually exclusive wired- and wireless network connection
+
 As a bonus you can make wired-network and wifi mutually exclusive, which will cause the machine to switch automatically 
 to wired when a cable is connected and to enterprise-wifi (when on premise) when the cable is disconnected.
 
@@ -358,6 +409,6 @@ chmod 755 /etc/NetworkManager/dispatcher.d/zz-wifi-off-while-wired-active.sh
 systemctl restart NetworkManager
 ```
 
-If run a DHCP server you can now setup static DHCP for the machine and the return the same IP-address for both the 
-wired and wireless MAC-addresses of the machine. Not only will the machine switch fluently between wired and 
+If you run a DHCP server it can be setup to use static DHCP for the machine and the return the same IP-address for both 
+the wired and wireless MAC-addresses of the machine. Not only will the machine switch fluently between wired and 
 enterprise-wifi, but since the IP-address remains the same any session will survive the switch !
