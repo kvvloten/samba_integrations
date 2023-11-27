@@ -343,3 +343,21 @@ chmod 750 /usr/local/sbin/nm_ep_wifi_password_change
 
 echo "* * * * * /usr/local/sbin/nm_ep_wifi_password_change > /dev/null 2>&1" > /etc/cron.d/nm_ep_wifi_password_change
 ```
+
+As a bonus you can make wired-network and wifi mutually exclusive, which will cause the machine to switch automatically 
+to wired when a cable is connected and to enterprise-wifi (when on premise) when the cable is disconnected.
+
+To make this work just copy files to `/etc/NetworkManager/dispatcher.d` 
+- `nm/02-wifi-on-while-wired-inactive.sh`
+- `nm/zz-wifi-off-while-wired-active.sh`
+
+Make them executable and restart NetworkManager:
+```bash
+chmod 755 /etc/NetworkManager/dispatcher.d/02-wifi-on-while-wired-inactive.sh
+chmod 755 /etc/NetworkManager/dispatcher.d/zz-wifi-off-while-wired-active.sh
+systemctl restart NetworkManager
+```
+
+If run a DHCP server you can now setup static DHCP for the machine and the return the same IP-address for both the 
+wired and wireless MAC-addresses of the machine. Not only will the machine switch fluently between wired and 
+enterprise-wifi, but since the IP-address remains the same any session will survive the switch !
