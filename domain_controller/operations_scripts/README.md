@@ -35,19 +35,19 @@ Usage: `get_nested_groups <object-name> [with-gid]`
 
 `with-gid` will only show results with attribute gidNumber set, this is only useful when your setup is using rfc2307
 
-```bash
-get_nexted_groups myuser
-```
 
 #### get_nested_users
 
-Lists all (nested) users (and computers) of a group
+Lists all (nested) users of a group
 
-Usage: `get_nested_groups <group-name>`
+Usage: `get_nested_users <group-name>`
 
-```bash
-get_nexted_users mygroup
-```
+#### get_nested_computers
+
+Lists all (nested) computers of a group
+
+Usage: `get_nested_computers <group-name>`
+
 
 #### ls_user_account_expiry
 
@@ -87,6 +87,11 @@ Usage: `ls_ldap_gpos`
 Removes LDAP records of a GPO. While the filesystem part of a GPO is easy to remove with `rm`, the accompanying LDAP 
 records can be removed with this script
 
-Usage: `rm_ldap_gpo {<UUID>}`
+Usage: `rm_ldap_gpo <UUID>`
 
-UUID must be encapsulated in curly brackets.
+#### rm_gpo
+
+Removes a GPO, both in LDAP and on the filesystem (sysvol)
+
+Usage: `rm_gpo <UUID>`
+

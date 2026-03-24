@@ -1,0 +1,13 @@
+#!/bin/bash
+
+[[ $# -ne 1 ]] && echo "Usage: $0 <uuid>" && exit 1
+UUID="$1"
+DOMAIN="$(dnsdomainname)"
+BASE_DN="DC=$(echo $DOMAIN | sed 's/\./,DC=/g')"
+GPO_DIR="/var/lib/samba/sysvol/${DOMAIN}/Policies/{${UUID}}"
+
+[[ ! -d "${GPO_DIR}" ]] && echo "GPO directory does not exist" && exit 1
+echo "Removing sysvol file at: ${GPO_DIR}"
+rm -r "${GPO_DIR}"
+
+rm_ldap_gpo "${UUID}"

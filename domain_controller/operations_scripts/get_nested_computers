@@ -14,5 +14,5 @@ OBJECT_DN="$(ldbsearch -H /var/lib/samba/private/sam.ldb -b "${BASE_DN}" "(|(CN=
 #echo "Object DN: ${OBJECT_DN}"
 #echo "Nested group memberships:"
 ldbsearch -H /var/lib/samba/private/sam.ldb -b "${BASE_DN}" \
-    "(&(objectCategory=person)(memberof:1.2.840.113556.1.4.1941:=${OBJECT_DN}))" 2> /dev/null | 
+    "(&(objectClass=computer)(memberof:1.2.840.113556.1.4.1941:=${OBJECT_DN}))" 2> /dev/null | 
     grep 'cn:' | cut -d ' ' -f 2- | sort
