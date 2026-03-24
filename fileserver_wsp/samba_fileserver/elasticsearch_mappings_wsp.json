@@ -1,0 +1,187 @@
+{
+    "attribute_mappings": {
+        "All": {
+            "type": "fts",
+            "attribute": "_all",
+            "col_conv": "default_conv"
+        },
+        "Path" : {
+            "type": "str",
+            "attribute": "file.url",
+            "col_conv": "url_to_winpath"
+        },
+        "Scope": {
+            "type": "str",
+            "attribute": "path.real.fulltext",
+            "col_conv": "url_to_winpath"
+        },
+       "System.Author": {
+            "type": "str",
+            "attribute": "meta.author",
+            "col_conv": "default_conv"
+        },
+        "System.DateAccessed": {
+            "type": "date",
+            "attribute": "file.last_accessed",
+            "col_conv": "date_to_filetime"
+        },
+        "System.DateModified": {
+            "type": "date",
+            "attribute": "file.last_modified",
+            "col_conv": "date_to_filetime"
+        },
+        "System.FileName": {
+            "type": "str",
+            "attribute": "file.filename",
+            "col_conv": "default_conv"
+        },
+        "System.ItemAuthors": {
+            "type": "str",
+            "attribute": "meta.author",
+            "col_conv": "default_conv"
+        },
+        "System.ItemFolderPathDisplay" : {
+            "type": "str",
+            "attribute": "file.url",
+            "col_conv": "url_to_item_folder"
+        },
+        "System.ItemFolderPathDisplayNarrow" : {
+            "type": "str",
+            "attribute": "file.url",
+            "col_conv": "convert_folderpath_narrow"
+        },
+        "System.ItemDate": {
+            "type": "date",
+            "attribute": "file.last_modified",
+            "col_conv": "date_to_filetime"
+        },
+        "System.ItemNameDisplay" : {
+            "type": "str",
+            "attribute": "file.filename",
+            "col_conv": "default_conv"
+        },
+        "System.ItemType": {
+            "type": "str",
+            "attribute": "file.extension",
+            "col_conv": "filename_to_itemtype"
+        },
+        "00000000-0000-0000-0000-000000000000/#SYSTEM.STRUCTUREDQUERY.VIRTUAL.TYPE" : {
+            "type": "str",
+            "attribute": "file.extension",
+            "col_conv": "filename_to_itemtype"
+        },
+        "System.ItemTypeText": {
+            "type": "str",
+            "attribute": "file.extension",
+            "col_conv": "filename_to_itemtypetext"
+        },
+        "System.ItemName" : {
+            "type": "str",
+            "attribute": "file.filename",
+            "col_conv": "default_conv"
+        },
+        "System.ItemURL": {
+            "type": "str",
+            "attribute": "file.url",
+            "col_conv": "url_to_winpath"
+        },
+        "System.Keywords": {
+            "type": "str",
+            "attribute": "meta.keywords",
+            "col_conv": "default_conv"
+        },
+        "System.Kind": {
+            "type": "map",
+            "attribute": "file.content_type",
+            "col_conv": "mimetype_to_kind"
+        },
+        "System.MIMEType": {
+            "type": "str",
+            "attribute": "file.content_type",
+            "col_conv": "default_conv"
+        },
+        "System.Music.AlbumTitle": {
+            "type": "str",
+            "attribute": "meta.raw.xmpDM:album",
+            "col_conv": "default_conv"
+        },
+        "System.Music.Genre": {
+            "type": "str",
+            "attribute": "meta.raw.xmpDM:genre",
+            "col_conv": "default_conv"
+        },
+        "System.Music.Artist": {
+            "type": "str",
+            "attribute": "meta.raw.xmpDM:artist",
+            "col_conv": "default_conv"
+        },
+        "System.Music.AlbumID": {
+            "type": "str",
+            "attribute": "meta.raw.xmpDM:album",
+            "col_conv": "default_conv"
+        },
+        "System.ParsingName" : {
+            "type": "str",
+            "attribute": "file.filename",
+            "col_conv": "default_conv"
+        },
+        "System.Search.EntryID" : {
+            "type": "str",
+            "attribute": "_Id",
+            "col_conv": "synthesize_entryid"
+        },
+        "System.Search.RowID" : {
+            "type": "str",
+            "attribute": "_Id",
+            "col_conv": "synthesize_rowid"
+        },
+        "System.Size": {
+            "type": "num",
+            "attribute": "file.filesize",
+            "col_conv": "default_conv"
+        },
+        "System.Title": {
+            "type": "str",
+            "attribute": "meta.title",
+            "col_conv": "url_to_fileattrs"
+        },
+        "System.Important.Unknown": {
+            "type": "num",
+            "attribute": "file.url",
+            "col_conv": "synthesize_entryid"
+        },
+        "System.FileAttributes": {
+            "type": "date",
+            "attribute": "file.url",
+            "col_conv": "url_to_fileattrs"
+        },
+        "System.DateCreated": {
+            "type": "date",
+            "attribute": "file.created",
+            "col_conv": "date_to_filetime"
+        }
+    },
+    "kind_mappings": {
+        "Calendar": "text/calendar",
+        "Communication":"",
+        "Contact": "text/*vcard",
+        "Document": "application/vnd.oasis.opendocument* application/pdf text/* application/msword application/vnd.ms-powerpoint application/vnd.ms-excel application/vnd.openxmlformats-officedocument*",
+        "Email": "application/mbox application/vnd.ms-outlook-ps message/rfc822 application/vnd.ms-outlook-pst application/vnd.ms-outlook application/vnd.ms-tnef application/x-tnef application/ms-tnef",
+        "Feed": "application/rss+xml application/atom+xml text/vnd.iptc.anpa text/xml",
+        "Folder":"",
+        "Game": "",
+        "InstantMessage": "",
+        "Journal": "",
+        "Link": "",
+        "Movie": "",
+        "Music": "audio/*",
+        "Note": "",
+        "Picture": "image/*",
+        "Program": "application/x-msdownload application/x-sharedlib application/x-elf application/x-object application/x-executable application/x-coredump",
+        "RecordedTV": "",
+        "SearchFolder": "",
+        "Task": "",
+        "Video": "video/*",
+        "WebHistory": ""
+    }
+}

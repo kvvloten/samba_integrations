@@ -1,6 +1,6 @@
 # SSHD with Privacyidea MFA and Samba authorization (for access from internet)
 
-**DISCLAIMER: Use of anything provided here is at you own risk!**
+**DISCLAIMER: Use of anything provided here is at your own risk!**
 
 SSHD setup with Privacyidea MFA authentication and Samba LDAP authorization based on nested group membership.
 
@@ -31,18 +31,17 @@ A description of how to setup Privacyidea with Samba backend is [here](../privac
 
 ## Setup
 
-Setup instructions are written for a Debian Bookworm server.
+Setup instructions are written for a Debian Bullseye server.
 
+In Bullseye `libpam-python` is Python-2 based which adds a lot of complexity to the setup of the venv (in Bookworm it is Python-3). 
 
 The setup partially overlaps with [Openvpn with Privacyidea](../openvpn_privacyidea/README.md), the sections 
 'Create a python2 venv' and 'Install and configure privacyidea_pam' can be skipped here when they are already setup.
 
 Assumptions:
-- Samba-AD has a (nested-) group `PERMISSION-GROUP-INTERNET` that contains users with permission to login from internet on this server. 
+- Samba-AD has a (nested-) group 'PERMISSION-GROUP' that contains users with permission to login from internet on this server. 
 - The users to login are known / can be resolved on the host (e.g. through winbind-nss)
 - The users to login have a home-directory (or pam-mkhomedir should be added to create it) 
-- The server is joined as a domain-member using Samba tooling (Winbind).
-- The server has nsswitch.conf configured so that user and group lookups to the AD-domain succeed (via libnss-winbind).
 
 ### Setup steps
 
@@ -59,7 +58,6 @@ pam-auth-update --remove ldap
 - Append `block_sshd_config` at the end of `/etc/ssh/sshd_config`
 - Edit `/etc/ssh/sshd_config`:
   - Change `<LOCAL_NETWORK_CIDR>` to the subnet-cidr of your local network
-  - Change `<PERMISSION-GROUP-INTERNET>` to the AD-group `PERMISSION-GROUP-INTERNET` 
 
 
 - Copy `pam_access-lan_lo.conf` to `/etc/security/pam_access-lan_lo.conf`
@@ -72,21 +70,28 @@ pam-auth-update --remove ldap
   - Set `<PRIVACYIDEA_BASE_URL>` to the URL of Privacyidea
 
 
-- Create a python venv and install privacyidea_pam (skip this if already setup for OpenVPN + Privacyidea):
+- Create a python2 venv (skip this if already setup for OpenVPN + Privacyidea):
 
 ```bash
-# If a python2 venv was setup for Bullseye, remove that first:
-rm -r /opt/privacyidea_pam
-
-# Setup for Bookworm
-python3 -m venv /opt/privacyidea_pam
+apt-get install python2 curl
+mkdir -p /opt/privacyidea_pam/get_pip_root
+curl -s https://bootstrap.pypa.io/pip/2.7/get-pip.py > /opt/privacyidea_pam/get-pip.py
+python2 /opt/privacyidea_pam/get-pip.py --no-python-version-warning --no-warn-script-location --prefix /opt/privacyidea_pam/get_pip_root
+PYTHONPATH=/opt/privacyidea_pam/get_pip_root/lib/python2.7/site-packages \
+   /opt/privacyidea_pam/get_pip_root/bin/pip2 install --prefix=/opt/privacyidea_pam/get_pip_root virtualenv
 source /opt/privacyidea_pam/bin/activate
-pip install pip setuptool wheel --upgrade 
-pip install requests certifi chardet idna passlib requests urllib3
-curl -s https://raw.githubusercontent.com/privacyidea/pam_python/master/privacyidea_pam.py > /opt/privacyidea_pam/lib/python3.11/site-packages/privacyidea_pam.py
+pip install pip setuptools wheel --upgrade
+```
 
-# Patch privacyidea_pam to work in a venv
-cd /opt/privacyidea_pam/lib/python3.11/site-packages
+
+- Install and configure privacyidea_pam (skip this if already setup for OpenVPN + Privacyidea)
+
+```bash
+apt-get install libpam-python sqlite3 curl
+source /opt/privacyidea_pam/bin/activate
+pip install -r https://raw.githubusercontent.com/privacyidea/pam_python/master/requirements.txt
+curl -s https://raw.githubusercontent.com/privacyidea/pam_python/master/privacyidea_pam.py > /opt/privacyidea_pam/lib/python2.7/site-packages/privacyidea_pam.py
+cd /opt/privacyidea_pam/lib/python2.7/site-packages
 cat << EOF | patch -p1
 --- a/privacyidea_pam.py    2022-03-24 11:55:05.601712742 +0100
 +++ b/privacyidea_pam.py    2022-03-24 17:11:27.569721976 +0100
@@ -104,9 +109,8 @@ cat << EOF | patch -p1
  import syslog
 EOF
 cd -
-
-# Configurions
 mkdir /etc/privacyidea
+
 touch /etc/privacyidea/pam.sqlite
 chmod 0600 /etc/privacyidea/pam.sqlite
 cat << EOF | sqlite3 /etc/privacyidea/pam.sqlite
@@ -120,22 +124,23 @@ EOF
 
 ```bash
 # On one of the DCs:
-samba-tool user create <SERVICE-ACCOUNT NAME>  # for example svc_<HOSTNAME>_sshd
+samba-tool user create <SERVICE-ACCOUNT NAME>
 samba-tool user setexpiry --noexpiry <SERVICE-ACCOUNT NAME>
 
-# Get the DN and put it in slapd.conf
+# Get the DN, the <SERVICE-ACCOUNT DN>
 samba-tool user show <SERVICE-ACCOUNT NAME>
 ```
 
-On upgrading from Bullseye:
-a per pam-service configuration is no longer supported, the global nslcd.conf is what is left, 
-but it already configured for openvpn (see [Openvpn with Privacyidea](../openvpn_privacyidea/README.md)).    
+- Copy `pam_ldap.conf` to `/etc/security/pam_ldap_sshd.conf`
+- Update permissions: `chmod 0640 /etc/security/pam_ldap_sshd.conf`
+- Edit `/etc/security/pam_ldap_sshd.conf`:
+  - Set DC hostnames in `uri`
+  - Set DN of the SERVICE-ACCOUNT in `binddn`
+  - Set password of the SERVICE-ACCOUNT in `bindpw`
+  - Set base-DN in `base`
+  - Set DN of the PERMISSION-GROUP in `pam_filter`
 
-- Remove the obsolete pam-service config file: `rm /etc/security/pam_ldap_sshd.conf` 
 
-Instead, the server should be made domain-member with Winbind tools and AD-group lookups can be done directly by sshd. 
-This is already configured by one of the previous steps 
-
-- Restart sshd: `ssytemctl restart sshd`
+- Restart sshd
 
 Once you have setup your MFA-token in Privacyidea, you are ready to login to ssh with MFA from internet 

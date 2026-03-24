@@ -12,6 +12,8 @@ network:
 http:
   host: 0.0.0.0
   port: 9200
+  # Disabled https compression to mitigate BREACH attacks
+  compression: false
 
 discovery:
   type: single-node
@@ -26,7 +28,7 @@ plugins:
         # REST layer (“HTTPS”) encryption
         enabled: true
         pemcert_filepath: private/host.crt
-        pemkey_filepath: private/host.key
+        pemkey_filepath: private/host.key.pkcs8
         pemtrustedcas_filepath: private/ca-certificates.crt
         truststore_filepath: private/cacerts
         enabled_protocols: ["TLSv1.2", "TLSv1.3"]
@@ -34,7 +36,7 @@ plugins:
       # Inter-node encryption
       transport:
         pemcert_filepath: private/host.crt
-        pemkey_filepath: private/host.key
+        pemkey_filepath: private/host.key.pkcs8
         pemtrustedcas_filepath: private/ca-certificates.crt
         enforce_hostname_verification: true
         # ldap requires java truststore 

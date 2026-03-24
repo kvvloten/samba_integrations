@@ -1,6 +1,6 @@
 # Self Service Password webinterface
 
-**DISCLAIMER: Use of anything provided here is at you own risk!**
+**DISCLAIMER: Use of anything provided here is at your own risk!**
 
 Web interface to change in an LDAP directory. 
 The project's github page is [here](https://github.com/ltb-project/self-service-password) 
@@ -20,7 +20,7 @@ The project's github page is [here](https://github.com/ltb-project/self-service-
 **It is not recommended to use a Samba-AD-DC server to setup the Self Service Password!** 
 Self Service Password requires a webserver, which opens up an extra attach-vector to your DCs, therefore it is better to put it on another machine. 
 
-Setup instructions are written for a Debian Bookworm server.
+Setup instructions are written for a Debian Bullseye server.
 
 Assumptions:
 - Apache2 is setup on the same server as Privacyidea and has a TLS enabled vhost ready to use. 
@@ -47,10 +47,10 @@ makepasswd --chars=32
 
 ```bash
 # On one of the DCs:
-samba-tool user create <SERVICE-ACCOUNT NAME>  # for example svc_<HOSTNAME>_ssp
+samba-tool user create <SERVICE-ACCOUNT NAME>
 samba-tool user setexpiry --noexpiry <SERVICE-ACCOUNT NAME>
 
-# Get the DN and put it in slapd.conf
+# Get the DN, the <SERVICE-ACCOUNT DN>
 samba-tool user show <SERVICE-ACCOUNT NAME>
 ```
 

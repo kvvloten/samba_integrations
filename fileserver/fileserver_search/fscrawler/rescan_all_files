@@ -1,0 +1,6 @@
+#!/bin/bash
+
+BASE_PATH="/opt/fscrawler"
+
+find ${BASE_PATH}/etc -name '_status.json' -exec rm {} \;
+ 

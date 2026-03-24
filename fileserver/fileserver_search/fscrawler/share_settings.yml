@@ -12,7 +12,7 @@ fs:
   add_as_inner_object: false
   store_source: false
   index_content: true
-  attributes_support: true
+  attributes_support: false
   raw_metadata: true
   xml_support: false
   index_folders: true

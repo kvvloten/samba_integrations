@@ -1,6 +1,6 @@
-# Anonymous LDAP-proxy
+# Setup anonymous LDAP-proxy
 
-**DISCLAIMER: Use of anything provided here is at you own risk!**
+**DISCLAIMER: Use of anything provided here is at your own risk!**
 
 Anonymous LDAP-proxy in front of Samba-AD is useful for older devices (e.g. printers) that cannot do LDAPS (or starttls) with modern ciphers.
 
@@ -34,10 +34,10 @@ apt-get install slapd ldap-utils
 
 ```bash
 # On one of the DCs:
-samba-tool user create <SERVICE-ACCOUNT NAME>  # for example svc_<HOSTNAME>_openldap_proxy
+samba-tool user create <SERVICE-ACCOUNT NAME>
 samba-tool user setexpiry --noexpiry <SERVICE-ACCOUNT NAME>
 
-# Get the DN and put it in slapd.conf
+# Get the DN, the <SERVICE-ACCOUNT DN>
 samba-tool user show <SERVICE-ACCOUNT NAME>
 ```
 

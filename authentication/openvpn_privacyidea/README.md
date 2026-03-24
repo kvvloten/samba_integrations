@@ -1,6 +1,6 @@
 # Openvpn with Privacyidea MFA and Samba authorization
 
-**DISCLAIMER: Use of anything provided here is at you own risk!**
+**DISCLAIMER: Use of anything provided here is at your own risk!**
 
 OpenVPN setup with Privacyidea MFA authentication and Samba LDAP authorization based on nested group membership.
 
@@ -32,7 +32,9 @@ This keeps maintenance on the client.conf low.
 
 ## Setup
 
-Setup instructions are written for a Debian Bookworm server.
+Setup instructions are written for a Debian Bullseye server.
+
+In Bullseye `libpam-python` is Python-2 based which adds a lot of complexity to the setup of the venv (in Bookworm it is Python-3). 
 
 The setup partially overlaps with [SSHD with Privacyidea](../sshd_privacyidea/README.md), the sections 
 'Create a python2 venv' and 'Install and configure privacyidea_pam' can be skipped here when they are already setup.
@@ -40,7 +42,7 @@ The setup partially overlaps with [SSHD with Privacyidea](../sshd_privacyidea/RE
 Assumptions:
 - A X509 (server-) certificate and a key file suitable for openvpn are available
 - A X509 ca.crt file is available
-- Samba-AD has a (nested-) group `PERMISSION-GROUP` that contains users with permission to use OpenVPN 
+- Samba-AD has a (nested-) group 'PERMISSION-GROUP' that contains users with permission to use OpenVPN 
 
 ### Setup steps
 
@@ -86,21 +88,28 @@ openvpn --genkey --secret /etc/openvpn/server/ta.key
   - Set `<PRIVACYIDEA_BASE_URL>` to the URL of Privacyidea
 
 
-- Create a python venv and install privacyidea_pam (skip this if already setup for SSHD + Privacyidea):
+- Create a python2 venv (skip this if already setup for SSHD + Privacyidea):
 
 ```bash
-# If a python2 venv was setup for Bullseye, remove that first:
-rm -r /opt/privacyidea_pam
-
-# Setup for Bookworm
-python3 -m venv /opt/privacyidea_pam
+apt-get install python2 curl
+mkdir -p /opt/privacyidea_pam/get_pip_root
+curl -s https://bootstrap.pypa.io/pip/2.7/get-pip.py > /opt/privacyidea_pam/get-pip.py
+python2 /opt/privacyidea_pam/get-pip.py --no-python-version-warning --no-warn-script-location --prefix /opt/privacyidea_pam/get_pip_root
+PYTHONPATH=/opt/privacyidea_pam/get_pip_root/lib/python2.7/site-packages \
+   /opt/privacyidea_pam/get_pip_root/bin/pip2 install --prefix=/opt/privacyidea_pam/get_pip_root virtualenv
 source /opt/privacyidea_pam/bin/activate
-pip install pip setuptool wheel --upgrade 
-pip install requests certifi chardet idna passlib requests urllib3
-curl -s https://raw.githubusercontent.com/privacyidea/pam_python/master/privacyidea_pam.py > /opt/privacyidea_pam/lib/python3.11/site-packages/privacyidea_pam.py
+pip install pip setuptools wheel --upgrade
+```
 
-# Patch privacyidea_pam to work in a venv
-cd /opt/privacyidea_pam/lib/python3.11/site-packages
+
+- Install and configure privacyidea_pam (skip this if already setup for SSHD + Privacyidea)
+
+```bash
+apt-get install libpam-python sqlite3 curl
+source /opt/privacyidea_pam/bin/activate
+pip install -r https://raw.githubusercontent.com/privacyidea/pam_python/master/requirements.txt
+curl -s https://raw.githubusercontent.com/privacyidea/pam_python/master/privacyidea_pam.py > /opt/privacyidea_pam/lib/python2.7/site-packages/privacyidea_pam.py
+cd /opt/privacyidea_pam/lib/python2.7/site-packages
 cat << EOF | patch -p1
 --- a/privacyidea_pam.py    2022-03-24 11:55:05.601712742 +0100
 +++ b/privacyidea_pam.py    2022-03-24 17:11:27.569721976 +0100
@@ -118,9 +127,8 @@ cat << EOF | patch -p1
  import syslog
 EOF
 cd -
-
-# Configurions
 mkdir /etc/privacyidea
+
 touch /etc/privacyidea/pam.sqlite
 chmod 0600 /etc/privacyidea/pam.sqlite
 cat << EOF | sqlite3 /etc/privacyidea/pam.sqlite
@@ -134,32 +142,24 @@ EOF
 
 ```bash
 # On one of the DCs:
-samba-tool user create <SERVICE-ACCOUNT NAME>  # for example svc_<HOSTNAME>_openvpn
+samba-tool user create <SERVICE-ACCOUNT NAME>
 samba-tool user setexpiry --noexpiry <SERVICE-ACCOUNT NAME>
 
-# Get the DN and put it in slapd.conf
+# Get the DN, the <SERVICE-ACCOUNT DN>
 samba-tool user show <SERVICE-ACCOUNT NAME>
 ```
 
-- On upgrading from Bullseye:
-  a per pam configuration is no longer supported, the global nslcd.conf is what is left,   
-  remove `/etc/security/pam_ldap_openvpn.conf` 
-
-- Copy `nslcd.conf` to `/etc/nslcd.conf`
-- Update permissions: `chmod 0640 /etc/nslcd.conf`
-- Update group: `chgrp nslcd /etc/nslcd.conf`
-- Edit `/etc/nslcd.conf`:
+- Copy `pam_ldap.conf` to `/etc/security/pam_ldap_openvpn.conf`
+- Update permissions: `chmod 0640 /etc/security/pam_ldap_openvpn.conf`
+- Edit `/etc/security/pam_ldap_openvpn.conf`:
   - Set DC hostnames in `uri`
   - Set DN of the SERVICE-ACCOUNT in `binddn`
   - Set password of the SERVICE-ACCOUNT in `bindpw`
   - Set base-DN in `base`
-  - Set DN of the PERMISSION-GROUP in `filter passwd`
+  - Set DN of the PERMISSION-GROUP in `pam_filter`
 
-- Restart services:
-```bash
-systemctl restart nslcd
-systemctl restart openvpn 
-```
+
+- Restart openvpn
 
 ### OpenVPN Windows client configuration
 
