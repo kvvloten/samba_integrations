@@ -21,7 +21,6 @@ More details are in [README](authentication/README.md)
 
 - Operations scripts - set of simple scripts to ease the life of a system operator
 - DC-Manage scripts - scripts to check and manage aspects of the domain-controller
-- Sysvol permissions - alternative set of sysvol and LDAP permissions to be more Windows alike and to allow full management of GPOs by members of `Group Policy Creator Owners`
 - GPO-from-JSON - generate GPOs from source files in JSON (and vice-versa)
 
 More details are in [README](domain_controller/README.md)

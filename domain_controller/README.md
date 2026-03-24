@@ -26,14 +26,6 @@ Set of scripts to ease the life of an operator.
 
 More details are in [README](operations_scripts/README.md) 
 
-## More Windows-like sysvol and LDAP permissions
-
-Reasons:
-- With these settings Windows will not change permissions when it manages files on sysvol.
-- No `Domain-admin` required to manage GPOs, instead members of `Group Policy Creator Owners` can   
-
-Setup details are in [README](sysvol_permissions/README.md) 
-
 ## Generate GPOs from source files in JSON
 
 GPOs come in a number of forms depending on their generation (implementation time). 
